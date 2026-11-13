@@ -25,7 +25,7 @@ tickets (OCR) se fait sur le téléphone.
 ## Contenu du PDF
 
 1. Justificatif rempli (16 lignes par feuille ; au-delà, feuilles supplémentaires avec
-   sous-total par feuille et total général sur la dernière). La case « DATE » est laissée vide.
+   sous-total par feuille et total général sur la dernière). La case « DATE » reçoit la date du jour de création du PDF.
 2. Tickets, 9 par page (3 × 3), ordre chronologique.
 3. Autres documents, un par page.
 

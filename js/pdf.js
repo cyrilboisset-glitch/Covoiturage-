@@ -4,7 +4,7 @@
 //   3. autres documents, un par page
 import { FORM, ROWS_PER_SHEET } from './layout.js';
 import { compressForPdf } from './imaging.js';
-import { formatEuros, formatDateFr, fuelLabel } from './format.js';
+import { formatEuros, formatDateFr, fuelLabel, todayIso } from './format.js';
 
 const INK = () => window.PDFLib.rgb(0.05, 0.13, 0.45); // bleu « stylo »
 const A4 = [595.28, 841.89];
@@ -123,7 +123,10 @@ export async function buildPdf({ template: templateBlob, settings, signature, ti
       page.drawText(g, { x: FORM.grandTotal.right - bold.widthOfTextAtSize(g, 9.5), y: Y(FORM.grandTotal.baseline), size: 9.5, font: bold, color: ink });
     }
 
-    // Signature (la case DATE reste vide, à remplir à la main)
+    // Date du jour de création du PDF, dans la case « DATE : »
+    page.drawText(formatDateFr(todayIso()), { x: FORM.signatureDate.x, y: Y(FORM.signatureDate.baseline), size: 11, font, color: ink });
+
+    // Signature
     if (sigImage) {
       const S = FORM.signature;
       const bw = S.x1 - S.x0, bh = S.bottom - S.top;

@@ -30,6 +30,8 @@ export const FORM = {
   total: { x0: 414.6, x1: 514.6, top: 587, bottom: 606 },
   grandTotal: { right: 514.6, baseline: 620 },
   sheetNumber: { right: 514.6, baseline: 249 },
+  // case « DATE : » à côté de la signature (date de génération du PDF)
+  signatureDate: { x: 96, baseline: 728 },
   // zone libre à droite de « SIGNATURE : »
   signature: { x0: 386, x1: 562, top: 700, bottom: 750 },
 };

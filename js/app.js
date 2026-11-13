@@ -855,7 +855,7 @@ function openPdfScreen() {
     <div class="sum-row"><span>Autres documents</span><b>${state.docs.length}</b></div>
     <div class="sum-row total"><span>Montant total</span><b>${formatEuros(total)}</b></div>
     ${issues.length ? `<div class="banner warn">À vérifier : ${issues.join(', ')}.</div>` : ''}
-    <p class="hint">La case « DATE » à côté de la signature est laissée vide.</p>`;
+    <p class="hint">La case « DATE » à côté de la signature reçoit la date du jour de création du PDF (${formatDateFr(todayIso())}).</p>`;
   $('#pdf-progress').hidden = true;
   $('#pdf-result').hidden = true;
   $('#btn-pdf-generate').disabled = false;
