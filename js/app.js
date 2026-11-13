@@ -11,6 +11,32 @@ import { buildConvention, TAUX, PIECES } from './convention.js';
 import { buildPdf, checkTemplate } from './pdf.js';
 
 const $ = (sel) => document.querySelector(sel);
+
+// ---------------------------------------------------------------------------
+// Version Android (APK) : la page tourne dans une WebView qui expose
+// window.AndroidApp pour enregistrer, ouvrir et partager les fichiers.
+const NATIVE = window.AndroidApp || null;
+const blobToB64 = (blob) => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(String(r.result).split(',')[1] || '');
+  r.onerror = () => rej(r.error);
+  r.readAsDataURL(blob);
+});
+function canShareFile(blob, name) {
+  if (NATIVE) return true;
+  try { return !!(navigator.canShare && navigator.canShare({ files: [new File([blob], name, { type: blob.type })] })); } catch (_) { return false; }
+}
+// Partage d'un fichier ; pour un e-mail, `to` pré-remplit le destinataire (Android).
+async function shareFile(blob, name, { subject = '', text = '', to = '' } = {}) {
+  if (NATIVE) { NATIVE.shareFile(await blobToB64(blob), name, blob.type || 'application/octet-stream', subject, text, to); return; }
+  await navigator.share({ files: [new File([blob], name, { type: blob.type })], title: subject || name, text: text || undefined });
+}
+async function nativeSave(blob, name) {
+  const msg = NATIVE.saveFile(await blobToB64(blob), name, blob.type || 'application/octet-stream');
+  if (msg) toast(msg, 4000);
+}
+async function nativeOpen(blob, name) { NATIVE.openFile(await blobToB64(blob), name, blob.type || 'application/octet-stream'); }
+if (NATIVE) document.documentElement.classList.add('native');
 const state = {
   settings: { nom: '', prenom: '', equipage: '', equipe: '', plafond: DEFAULTS.plafond, emailTo: DEFAULTS.emailTo },
   signature: null, // Blob PNG
@@ -933,7 +959,7 @@ $('#btn-pdf-generate').addEventListener('click', async () => {
     prog.hidden = true;
     $('#pdf-result').hidden = false;
     prefillMail(list);
-    $('#btn-pdf-share').hidden = !(navigator.canShare && navigator.canShare({ files: [new File([pdfBlob], pdfName, { type: 'application/pdf' })] }));
+    $('#btn-pdf-share').hidden = !canShareFile(pdfBlob, pdfName);
   } catch (err) {
     console.error(err);
     prog.className = 'banner error';
@@ -971,7 +997,7 @@ function prefillMail(list) {
   $('#m-subject').value = `Justificatifs de frais covoiturage ${state.year}${who ? ' – ' + who : ''}`;
   $('#m-body').value = lines.join('\n');
   updateMailLink();
-  const canShare = !!(navigator.canShare && navigator.canShare({ files: [new File([pdfBlob], pdfName, { type: 'application/pdf' })] }));
+  const canShare = canShareFile(pdfBlob, pdfName);
   $('#btn-mail-share').hidden = !canShare;
   $('#mail-share-hint').hidden = !canShare;
 }
@@ -985,10 +1011,9 @@ function updateMailLink() {
 $('#btn-mail-share').addEventListener('click', async () => {
   if (!pdfBlob) return;
   const to = $('#m-to').value.trim();
-  try { await navigator.clipboard.writeText(to); toast(`Adresse copiée : ${to}`); } catch (_) { /* presse-papiers indisponible */ }
-  const file = new File([pdfBlob], pdfName, { type: 'application/pdf' });
+  if (!NATIVE) { try { await navigator.clipboard.writeText(to); toast(`Adresse copiée : ${to}`); } catch (_) { /* presse-papiers indisponible */ } }
   try {
-    await navigator.share({ files: [file], title: $('#m-subject').value, text: $('#m-body').value });
+    await shareFile(pdfBlob, pdfName, { subject: $('#m-subject').value, text: $('#m-body').value, to });
   } catch (err) {
     if (err.name !== 'AbortError') toast('Partage impossible : utilisez « Ouvrir ma messagerie ».', 4000);
   }
@@ -996,10 +1021,7 @@ $('#btn-mail-share').addEventListener('click', async () => {
 
 $('#btn-pdf-share').addEventListener('click', async () => {
   if (!pdfBlob) return;
-  const file = new File([pdfBlob], pdfName, { type: 'application/pdf' });
-  try {
-    await navigator.share({ files: [file], title: pdfName });
-  } catch (err) {
+  try { await shareFile(pdfBlob, pdfName, { subject: pdfName }); } catch (err) {
     if (err.name !== 'AbortError') toast('Partage impossible : utilisez « Enregistrer ».');
   }
 });
@@ -1028,16 +1050,7 @@ $('#btn-export').addEventListener('click', async () => {
   };
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
   const name = `covoiturage-sauvegarde-${todayIso()}.json`;
-  const file = new File([blob], name, { type: 'application/json' });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: name }); return; } catch (err) { if (err.name === 'AbortError') return; }
-  }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  await shareOrDownload(blob, name);
 });
 
 $('#btn-import').addEventListener('click', () => { $('#import-input').value = ''; $('#import-input').click(); });
@@ -1287,9 +1300,8 @@ $('#btn-fiche-save').addEventListener('click', async () => {
 
 // --- Équipage : export / import
 async function shareOrDownload(blob, name) {
-  const file = new File([blob], name, { type: blob.type });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: name }); return; } catch (err) { if (err.name === 'AbortError') return; }
+  if (canShareFile(blob, name)) {
+    try { await shareFile(blob, name); return; } catch (err) { if (err.name === 'AbortError') return; }
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1427,7 +1439,7 @@ $('#btn-conv-generate').addEventListener('click', async () => {
       '', 'Cordialement,', `${me.prenom} ${me.nom}`,
     ].join('\n');
     updateConvMail();
-    const canShare = !!(navigator.canShare && navigator.canShare({ files: [new File([convBlob], convName, { type: 'application/pdf' })] }));
+    const canShare = canShareFile(convBlob, convName);
     $('#btn-conv-share').hidden = !canShare;
     $('#conv-share-hint').hidden = !canShare;
     prog.hidden = true;
@@ -1450,14 +1462,42 @@ $('#btn-conv-mail').addEventListener('click', () => saveRenewCfg({ sentAt: today
 $('#btn-conv-share').addEventListener('click', async () => {
   if (!convBlob) return;
   const to = $('#c-to').value.trim();
-  try { await navigator.clipboard.writeText(to); toast(`Adresse copiée : ${to}`); } catch (_) { /* ignoré */ }
+  if (!NATIVE) { try { await navigator.clipboard.writeText(to); toast(`Adresse copiée : ${to}`); } catch (_) { /* ignoré */ } }
   try {
-    await navigator.share({ files: [new File([convBlob], convName, { type: 'application/pdf' })], title: $('#c-subject').value, text: $('#c-body').value });
+    await shareFile(convBlob, convName, { subject: $('#c-subject').value, text: $('#c-body').value, to });
     saveRenewCfg({ sentAt: todayIso() });
   } catch (err) {
     if (err.name !== 'AbortError') toast('Partage impossible : utilisez « Ouvrir ma messagerie ».', 4000);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Android : boutons Enregistrer / Ouvrir et bouton retour du téléphone
+
+if (NATIVE) {
+  const hook = (sel, getter, fn) => $(sel).addEventListener('click', (e) => {
+    e.preventDefault();
+    const [blob, name] = getter();
+    if (blob) fn(blob, name);
+  });
+  hook('#btn-pdf-download', () => [pdfBlob, pdfName], nativeSave);
+  hook('#btn-pdf-open', () => [pdfBlob, pdfName], nativeOpen);
+  hook('#btn-conv-download', () => [convBlob, convName], nativeSave);
+  hook('#btn-conv-open', () => [convBlob, convName], nativeOpen);
+  for (const sel of ['#mail-share-hint', '#conv-share-hint']) {
+    $(sel).textContent = 'Choisissez votre messagerie : destinataire, objet, message et PDF joint sont pré-remplis.';
+  }
+}
+
+// Appelé par l'appli Android sur « retour » : true si la page a géré le retour.
+window.appBack = () => {
+  if (!$('#viewer').hidden) { $('#viewer').hidden = true; return true; }
+  if (!$('#picker').hidden) { $('#pick-cancel').click(); return true; }
+  if (stack.length > 1) { history.back(); return true; }
+  const top = stack[stack.length - 1];
+  if (top !== 'home') { show('home', 'replace'); renderHome(); return true; }
+  return false;
+};
 
 // ---------------------------------------------------------------------------
 // Démarrage
@@ -1467,7 +1507,7 @@ $('#btn-conv-share').addEventListener('click', async () => {
   await loadAll();
   renderHome();
   if (!state.settings.nom && !state.settings.prenom) openSettings(true);
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  if ('serviceWorker' in navigator && location.protocol !== 'file:' && !NATIVE && !window.__INLINE__) {
     navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW', e));
   }
 })();

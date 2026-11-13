@@ -62,6 +62,21 @@ directement dans le navigateur du téléphone, sans serveur ni réseau, et peut 
 à des collègues par e-mail ou messagerie. Limites : pas d'installation « appli » ni de mise à
 jour automatique ; les données sont liées au navigateur qui a ouvert le fichier.
 
+## Application Android (APK)
+
+À chaque modification poussée sur GitHub, le workflow `.github/workflows/apk.yml` construit
+l'appli en fichier unique (sans les formulaires), l'empaquette dans une WebView Android
+(`android/`) et dépose `apk/Covoiturage.apk` dans le dépôt.
+
+L'appli Android ajoute : appareil photo, choix de fichiers, enregistrement des PDF dans
+Téléchargements/Covoiturage, ouverture des PDF, partage, et envoi par e-mail avec le
+destinataire, l'objet, le message et le PDF joint pré-remplis.
+
+Signature : ajouter les secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS` et `ANDROID_KEY_PASSWORD` pour que chaque nouvelle version s'installe
+par-dessus la précédente sans perdre les données. Sans eux, l'APK est signé avec une clé de
+test qui change à chaque compilation (il faut alors désinstaller avant de réinstaller).
+
 ## Organisation
 
 - `index.html`, `styles.css` – interface
