@@ -34,14 +34,13 @@ function fitText(font, text, size, maxWidth) {
   return s;
 }
 
-export async function buildPdf({ settings, signature, tickets, docs, onStep }) {
+export async function buildPdf({ template: templateBlob, settings, signature, tickets, docs, onStep }) {
   const { PDFDocument, StandardFonts, rgb } = window.PDFLib;
   const step = (msg) => onStep && onStep(msg);
 
   step('Préparation du justificatif…');
-  const templateBytes = window.__INLINE__
-    ? window.__INLINE__.bytes('template')
-    : await (await fetch('assets/justificatif.pdf')).arrayBuffer();
+  if (!templateBlob) throw new Error('Justificatif vierge manquant : importez-le dans les Réglages.');
+  const templateBytes = await templateBlob.arrayBuffer();
   const template = await PDFDocument.load(templateBytes);
   const out = await PDFDocument.create();
   out.setTitle(`Justificatifs covoiturage ${settings.prenom || ''} ${settings.nom || ''}`.trim());
@@ -184,4 +183,16 @@ export async function buildPdf({ settings, signature, tickets, docs, onStep }) {
   step('Finalisation…');
   const bytes = await out.save();
   return new Blob([bytes], { type: 'application/pdf' });
+}
+
+// Vérifie qu'un PDF importé ressemble au justificatif attendu
+// (une page au format Letter, dont les emplacements ont été mesurés).
+export async function checkTemplate(blob) {
+  const { PDFDocument } = window.PDFLib;
+  const doc = await PDFDocument.load(await blob.arrayBuffer());
+  const pages = doc.getPages();
+  if (!pages.length) throw new Error('Ce PDF ne contient aucune page.');
+  const { width, height } = pages[0].getSize();
+  const ok = Math.abs(width - 612) < 3 && Math.abs(height - FORM.pageHeight) < 3;
+  return { ok, pages: pages.length, width, height };
 }

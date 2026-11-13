@@ -2,13 +2,22 @@
 """Construit une version « fichier unique » de l'appli : un seul .html qui
 contient tout (code, bibliothèques, justificatif vierge, lecture des tickets).
 
-Usage : python3 tools/build_single.py [sortie.html]
+Usage : python3 tools/build_single.py [sortie.html] [--justificatif chemin.pdf]
+
+--justificatif : embarque le justificatif vierge dans le fichier (à ne faire
+que pour une diffusion privée ; il n'est pas dans le dépôt).
 """
 import base64, re, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'dist' / 'covoiturage.html'
+args = sys.argv[1:]
+TEMPLATE = None
+if '--justificatif' in args:
+    i = args.index('--justificatif')
+    TEMPLATE = Path(args[i + 1]).resolve()
+    del args[i:i + 2]
+OUT = Path(args[0]) if args else ROOT / 'dist' / 'covoiturage.html'
 
 MODULES = ['layout', 'format', 'store', 'imaging', 'ocr', 'pdf', 'app']
 
@@ -26,8 +35,8 @@ def bundle():
     return '\n'.join(parts)
 
 def b64(path):
-    data = (ROOT / path).read_bytes()
-    if path.endswith('worker.min.js'):
+    data = (ROOT / path).read_bytes() if not isinstance(path, Path) else path.read_bytes()
+    if str(path).endswith('worker.min.js'):
         # Correctif Tesseract.js 5.1.1 : avec une langue fournie en mémoire
         # ({code, data}), l'initialisation utilise « data » au lieu de « code ».
         bug = b'return"string"==typeof t?t:t.data}'
@@ -49,8 +58,9 @@ blobs = {
     'worker': ('vendor/tesseract/worker.min.js', 'text/javascript'),
     'core': ('vendor/tesseract/tesseract-core-simd-lstm.wasm.js', 'text/javascript'),
     'lang': ('vendor/tesseract/lang/fra.traineddata.gz', 'application/gzip'),
-    'template': ('assets/justificatif.pdf', 'application/pdf'),
 }
+if TEMPLATE:
+    blobs['template'] = (TEMPLATE, 'application/pdf')
 data_tags = '\n'.join(
     f'<script type="application/octet-stream" id="inline-{k}" data-type="{t}">{b64(p)}</script>'
     for k, (p, t) in blobs.items())
@@ -74,7 +84,8 @@ window.__INLINE__ = (() => {
   let worker = null;
   const workerUrl = () => worker || (worker = URL.createObjectURL(new Blob(
     ['self.importScripts = function () {};\\n', bytes('core'), '\\n', bytes('worker')], { type: 'text/javascript' })));
-  return { bytes: (k) => bytes(k).slice().buffer, lang: () => bytes('lang').slice(), url, workerUrl };
+  const has = (k) => !!document.getElementById('inline-' + k);
+  return { has, bytes: (k) => bytes(k).slice().buffer, lang: () => bytes('lang').slice(), url, workerUrl };
 })();
 </script>
 """

@@ -3,12 +3,13 @@ import { EQUIPES, FUELS } from './layout.js';
 import { formatEuros, parseEuros, centsToInput, formatDateFr, todayIso, escapeHtml } from './format.js';
 import { loadImage, toCanvas, rotate90, compressForStorage, extractSignature, trimTransparent, canvasToBlob } from './imaging.js';
 import { recognize } from './ocr.js';
-import { buildPdf } from './pdf.js';
+import { buildPdf, checkTemplate } from './pdf.js';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
   settings: { nom: '', prenom: '', equipage: '', equipe: '' },
   signature: null, // Blob PNG
+  template: null, // Blob PDF du justificatif vierge
   tickets: [],
   docs: [],
   year: new Date().getFullYear(),
@@ -61,6 +62,11 @@ function toast(msg, ms = 2600) {
 async function loadAll() {
   state.settings = { ...state.settings, ...((await store.kvGet('settings')) || {}) };
   state.signature = (await store.kvGet('signature')) || null;
+  state.template = (await store.kvGet('template')) || null;
+  // version « fichier unique » : justificatif éventuellement embarqué
+  if (!state.template && window.__INLINE__ && window.__INLINE__.has('template')) {
+    state.template = new Blob([window.__INLINE__.bytes('template')], { type: 'application/pdf' });
+  }
   state.tickets = await store.getAll('tickets');
   state.docs = await store.getAll('docs');
   const y = await store.kvGet('year');
@@ -98,6 +104,7 @@ function renderHome() {
   if (!state.settings.nom || !state.settings.prenom) missing.push('nom et prénom');
   if (!state.settings.equipe) missing.push('équipe');
   if (!state.signature) missing.push('signature');
+  if (!state.template) missing.push('justificatif vierge (PDF)');
   const w = $('#setup-warning');
   w.hidden = !missing.length;
   w.innerHTML = missing.length ? `À compléter dans les <a href="#" id="go-settings">Réglages</a> : ${missing.join(', ')}.` : '';
@@ -551,6 +558,7 @@ function openSettings(firstRun = false) {
     <label class="choice"><input type="radio" name="equipe" value="${e}" ${s.equipe === e ? 'checked' : ''}><span>${e}</span></label>`).join('');
   draftSignature = undefined;
   renderSigPreview();
+  renderTplStatus();
   show('settings');
 }
 
@@ -587,6 +595,29 @@ $('#settings-form').addEventListener('submit', async (e) => {
   store.requestPersistence();
   toast(state.signature ? 'Réglages enregistrés.' : 'Réglages enregistrés. Pensez à ajouter votre signature.');
   goHome();
+});
+
+function renderTplStatus() {
+  const st = $('#tpl-status');
+  st.className = state.template ? 'banner info' : 'banner warn';
+  st.textContent = state.template ? '✅ Justificatif vierge enregistré sur ce téléphone.' : 'Aucun justificatif vierge : importez le PDF fourni par l\'entreprise.';
+  $('#btn-tpl-import').textContent = state.template ? '📄 Remplacer le justificatif vierge' : '📄 Importer le justificatif vierge';
+}
+$('#btn-tpl-import').addEventListener('click', () => { $('#tpl-input').value = ''; $('#tpl-input').click(); });
+$('#tpl-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const blob = new Blob([await file.arrayBuffer()], { type: 'application/pdf' });
+    const info = await checkTemplate(blob);
+    if (!info.ok && !confirm(`Ce PDF n'a pas le format attendu (${Math.round(info.width)} × ${Math.round(info.height)} pt au lieu de 612 × 792). Les valeurs risquent d'être mal placées. L'utiliser quand même ?`)) return;
+    state.template = blob;
+    await store.kvSet('template', blob);
+    renderTplStatus();
+    toast('Justificatif vierge enregistré.');
+  } catch (err) {
+    toast('PDF illisible : ' + (err.message || err), 4000);
+  }
 });
 
 // Signature par photo
@@ -703,6 +734,7 @@ function openPdfScreen() {
   if (!state.settings.nom || !state.settings.prenom) issues.push('nom et prénom manquants');
   if (!state.settings.equipe) issues.push('équipe non choisie');
   if (!state.signature) issues.push('signature manquante');
+  if (!state.template) issues.push('justificatif vierge non importé (Réglages)');
   if (!list.length) issues.push(`aucun ticket en ${state.year}`);
   $('#pdf-summary').innerHTML = `
     <div class="sum-row"><span>Année</span><b>${state.year}</b></div>
@@ -722,6 +754,7 @@ $('#btn-pdf').addEventListener('click', openPdfScreen);
 
 $('#btn-pdf-generate').addEventListener('click', async () => {
   const list = ticketsOfYear();
+  if (!state.template) { toast('Importez d\'abord le justificatif vierge dans les Réglages.', 4000); return; }
   if (!list.length && !confirm(`Aucun ticket en ${state.year}. Générer quand même ?`)) return;
   if (!state.signature && !confirm('Aucune signature enregistrée. Générer quand même ?')) return;
   const btn = $('#btn-pdf-generate');
@@ -732,6 +765,7 @@ $('#btn-pdf-generate').addEventListener('click', async () => {
   $('#pdf-result').hidden = true;
   try {
     pdfBlob = await buildPdf({
+      template: state.template,
       settings: state.settings,
       signature: state.signature,
       tickets: list,
@@ -783,6 +817,7 @@ $('#btn-export').addEventListener('click', async () => {
     exportedAt: new Date().toISOString(),
     settings: state.settings,
     signature: state.signature ? await blobToDataUrl(state.signature) : null,
+    template: state.template ? await blobToDataUrl(state.template) : null,
     tickets: await Promise.all(state.tickets.map(async (t) => ({ ...t, image: await blobToDataUrl(t.image) }))),
     docs: await Promise.all(state.docs.map(async (d) => ({ ...d, image: await blobToDataUrl(d.image) }))),
   };
@@ -813,12 +848,14 @@ $('#import-input').addEventListener('change', async (e) => {
     const tickets = await Promise.all((data.tickets || []).map(async (t) => ({ ...t, image: await dataUrlToBlob(t.image) })));
     const docs = await Promise.all((data.docs || []).map(async (d) => ({ ...d, image: await dataUrlToBlob(d.image) })));
     const signature = data.signature ? await dataUrlToBlob(data.signature) : null;
+    const template = data.template ? await dataUrlToBlob(data.template) : null;
     await store.clear('tickets');
     await store.clear('docs');
     for (const t of tickets) await store.put('tickets', t);
     for (const d of docs) await store.put('docs', d);
     await store.kvSet('settings', data.settings || {});
     if (signature) await store.kvSet('signature', signature); else await store.kvDel('signature');
+    if (template) await store.kvSet('template', template);
     await loadAll();
     renderHome();
     toast('Sauvegarde restaurée.');

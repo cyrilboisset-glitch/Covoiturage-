@@ -1,6 +1,6 @@
 // Service worker : met toute l'appli en cache pour un fonctionnement hors ligne.
 // Pensez à incrémenter VERSION à chaque modification des fichiers.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = `covoiturage-${VERSION}`;
 const FILES = [
   './',
@@ -14,7 +14,6 @@ const FILES = [
   'js/imaging.js',
   'js/ocr.js',
   'js/pdf.js',
-  'assets/justificatif.pdf',
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/icon-maskable-512.png',

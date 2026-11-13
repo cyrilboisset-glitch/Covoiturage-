@@ -1,4 +1,4 @@
-// Emplacements des valeurs sur le justificatif (assets/justificatif.pdf).
+// Emplacements des valeurs sur le justificatif vierge (PDF importé dans les Réglages).
 // Mesurés sur le PDF d'origine (page 612 x 792 pt). Toutes les ordonnées
 // sont exprimées depuis le HAUT de la page (comme à l'écran) ; la conversion
 // vers le repère PDF (origine en bas) est faite dans pdf.js.
