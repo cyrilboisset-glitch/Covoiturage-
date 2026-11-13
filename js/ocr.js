@@ -10,13 +10,25 @@ function abs(path) { return new URL(path, document.baseURI).href; }
 async function getWorker(onProgress) {
   if (!workerPromise) {
     workerPromise = (async () => {
-      const w = await window.Tesseract.createWorker('fra', 1, {
-        workerPath: abs('vendor/tesseract/worker.min.js'),
-        corePath: abs('vendor/tesseract/'),
-        langPath: abs('vendor/tesseract/lang'),
-        gzip: true,
-        logger: (m) => progressCb && progressCb(m),
-      });
+      // Version « fichier unique » : les ressources sont embarquées dans la page.
+      const inline = window.__INLINE__;
+      const w = inline
+        ? await window.Tesseract.createWorker([{ code: 'fra', data: inline.lang() }], 1, {
+            // moteur + worker réunis dans un seul script (importScripts est
+            // interdit pour les pages ouvertes depuis un fichier local)
+            workerPath: inline.workerUrl(),
+            workerBlobURL: false,
+            corePath: 'inline-core.js',
+            cacheMethod: 'none',
+            logger: (m) => progressCb && progressCb(m),
+          })
+        : await window.Tesseract.createWorker('fra', 1, {
+            workerPath: abs('vendor/tesseract/worker.min.js'),
+            corePath: abs('vendor/tesseract/'),
+            langPath: abs('vendor/tesseract/lang'),
+            gzip: true,
+            logger: (m) => progressCb && progressCb(m),
+          });
       await w.setParameters({ preserve_interword_spaces: '1' });
       return w;
     })();

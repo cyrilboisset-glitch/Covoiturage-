@@ -39,7 +39,9 @@ export async function buildPdf({ settings, signature, tickets, docs, onStep }) {
   const step = (msg) => onStep && onStep(msg);
 
   step('Préparation du justificatif…');
-  const templateBytes = await (await fetch('assets/justificatif.pdf')).arrayBuffer();
+  const templateBytes = window.__INLINE__
+    ? window.__INLINE__.bytes('template')
+    : await (await fetch('assets/justificatif.pdf')).arrayBuffer();
   const template = await PDFDocument.load(templateBytes);
   const out = await PDFDocument.create();
   out.setTitle(`Justificatifs covoiturage ${settings.prenom || ''} ${settings.nom || ''}`.trim());

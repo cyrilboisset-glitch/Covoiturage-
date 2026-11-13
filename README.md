@@ -34,6 +34,14 @@ Après toute modification des fichiers, incrémenter `VERSION` dans `sw.js`.
 
 Test local : `python3 -m http.server 8000` puis http://localhost:8000
 
+## Version « fichier unique » (sans hébergement)
+
+`python3 tools/build_single.py` produit `dist/covoiturage.html` (~7 Mo) : un seul fichier
+qui contient tout (code, bibliothèques, justificatif vierge, lecture des tickets). Il s'ouvre
+directement dans le navigateur du téléphone, sans serveur ni réseau, et peut être transmis
+à des collègues par e-mail ou messagerie. Limites : pas d'installation « appli » ni de mise à
+jour automatique ; les données sont liées au navigateur qui a ouvert le fichier.
+
 ## Organisation
 
 - `index.html`, `styles.css` – interface
@@ -43,5 +51,6 @@ Test local : `python3 -m http.server 8000` puis http://localhost:8000
 - `js/ocr.js` – lecture des tickets (Tesseract.js, français)
 - `js/imaging.js` – recadrage, compression, extraction de la signature
 - `js/store.js` – stockage local
+- `tools/build_single.py` – construction de la version fichier unique
 - `assets/justificatif.pdf` – formulaire vierge
 - `vendor/` – bibliothèques embarquées (pdf-lib, Tesseract.js), licences incluses
