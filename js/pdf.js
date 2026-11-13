@@ -123,6 +123,11 @@ export async function buildPdf({ template: templateBlob, settings, signature, ti
       page.drawText(g, { x: FORM.grandTotal.right - bold.widthOfTextAtSize(g, 9.5), y: Y(FORM.grandTotal.baseline), size: 9.5, font: bold, color: ink });
     }
 
+    // Efface une éventuelle ancienne signature / date présente sur le modèle
+    for (const z of FORM.clearZones) {
+      page.drawRectangle({ x: z.x0, y: Y(z.bottom), width: z.x1 - z.x0, height: z.bottom - z.top, color: rgb(1, 1, 1) });
+    }
+
     // Date du jour de création du PDF, dans la case « DATE : »
     page.drawText(formatDateFr(todayIso()), { x: FORM.signatureDate.x, y: Y(FORM.signatureDate.baseline), size: 11, font, color: ink });
 
@@ -197,5 +202,7 @@ export async function checkTemplate(blob) {
   if (!pages.length) throw new Error('Ce PDF ne contient aucune page.');
   const { width, height } = pages[0].getSize();
   const ok = Math.abs(width - 612) < 3 && Math.abs(height - FORM.pageHeight) < 3;
-  return { ok, pages: pages.length, width, height };
+  // un dossier déjà généré par l'appli n'est pas un justificatif vierge
+  const alreadyFilled = (doc.getCreator() || '') === 'Covoiturage PDE';
+  return { ok, alreadyFilled, pages: pages.length, width, height };
 }

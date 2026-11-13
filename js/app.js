@@ -722,6 +722,10 @@ $('#tpl-input').addEventListener('change', async (e) => {
   try {
     const blob = new Blob([await file.arrayBuffer()], { type: 'application/pdf' });
     const info = await checkTemplate(blob);
+    if (info.alreadyFilled) {
+      toast('Ce PDF est un dossier déjà rempli par l\'appli, pas le justificatif vierge. Importez le formulaire vierge.', 6000);
+      return;
+    }
     if (!info.ok && !confirm(`Ce PDF n'a pas le format attendu (${Math.round(info.width)} × ${Math.round(info.height)} pt au lieu de 612 × 792). Les valeurs risquent d'être mal placées. L'utiliser quand même ?`)) return;
     state.template = blob;
     await store.kvSet('template', blob);

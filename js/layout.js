@@ -34,6 +34,12 @@ export const FORM = {
   signatureDate: { x: 96, baseline: 728 },
   // zone libre à droite de « SIGNATURE : »
   signature: { x0: 386, x1: 562, top: 700, bottom: 750 },
+  // zones effacées (rectangle blanc) avant d'écrire la date et la signature,
+  // au cas où le justificatif importé contiendrait déjà une ancienne signature
+  clearZones: [
+    { x0: 382, x1: 576, top: 694, bottom: 760 }, // signature
+    { x0: 89, x1: 320, top: 714, bottom: 735 }, // date
+  ],
 };
 
 export const ROWS_PER_SHEET = FORM.table.rows.length - 1; // 16
