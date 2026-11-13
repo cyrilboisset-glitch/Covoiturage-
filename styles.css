@@ -230,3 +230,16 @@ body {
 .toast[hidden] { display: none; }
 .ticket-fields { min-width: 0; }
 html, body { overflow-x: hidden; }
+
+/* Planche de tickets */
+.batch-stage { position: relative; background: #222; border-radius: 12px; overflow: hidden; }
+.batch-stage img { display: block; width: 100%; }
+.bbox {
+  position: absolute; border: 3px solid #3fe0a0; background: rgba(63,224,160,.12);
+  border-radius: 4px; padding: 0; font: 700 18px system-ui; color: #fff; cursor: pointer;
+}
+.bbox span { position: absolute; left: -3px; top: -3px; min-width: 20px; padding: 0 5px; font-size: 13px; opacity: .9; background: #156548; border-radius: 0 0 8px 0; }
+.bbox.off { border-color: #e05a3f; background: rgba(0,0,0,.55); }
+.bbox.off span { background: #b3261e; }
+.bbox.off::after { content: "exclu"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+.batch-badge { display: inline-block; background: var(--primary); color: #fff; border-radius: 8px; padding: 2px 8px; font-size: 14px; margin-left: 6px; vertical-align: middle; }

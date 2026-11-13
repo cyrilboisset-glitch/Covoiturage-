@@ -35,6 +35,7 @@
     </div>
 
     <h2 class="section-title">Tickets <span class="muted">(par date)</span></h2>
+    <button class="btn secondary block" id="btn-add-batch">🗂️ Plusieurs tickets sur une photo</button>
     <ul id="ticket-list" class="list"></ul>
     <p id="ticket-empty" class="empty">Aucun ticket pour cette année.<br>Appuyez sur « Ajouter un ticket » au moment du plein.</p>
 
@@ -192,6 +193,25 @@
     <nav class="actionbar">
       <button class="btn secondary big" id="btn-ticket-retake">Reprendre</button>
       <button class="btn primary big grow" id="btn-ticket-save" disabled>Valider</button>
+    </nav>
+  </section>
+
+  <!-- ================= PLANCHE DE TICKETS ================= -->
+  <section id="batch" class="screen" hidden>
+    <header class="topbar">
+      <button class="icon-btn back" data-back aria-label="Retour">←</button>
+      <h1>Plusieurs tickets</h1>
+    </header>
+    <div id="batch-info" class="banner info"></div>
+    <div class="batch-stage" id="batch-stage">
+      <img id="batch-img" alt="Photo des tickets">
+      <div id="batch-boxes"></div>
+    </div>
+    <p class="hint">Touchez un cadre pour l'exclure ou le réinclure. Un ticket non détecté pourra être ajouté ensuite avec « Ajouter un ticket ».</p>
+    <div class="bottom-spacer"></div>
+    <nav class="actionbar">
+      <button class="btn secondary big" id="btn-batch-retake">Reprendre</button>
+      <button class="btn primary big grow" id="btn-batch-go">Lire les tickets</button>
     </nav>
   </section>
 

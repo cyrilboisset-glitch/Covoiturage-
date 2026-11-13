@@ -19,7 +19,7 @@ if '--justificatif' in args:
     del args[i:i + 2]
 OUT = Path(args[0]) if args else ROOT / 'dist' / 'covoiturage.html'
 
-MODULES = ['layout', 'format', 'store', 'imaging', 'ocr', 'pdf', 'app']
+MODULES = ['layout', 'format', 'store', 'imaging', 'segment', 'ocr', 'pdf', 'app']
 
 def bundle():
     parts = []

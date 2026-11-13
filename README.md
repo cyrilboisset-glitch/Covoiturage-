@@ -16,6 +16,9 @@ tickets (OCR) se fait sur le téléphone.
 3. Au premier lancement : Réglages (nom, prénom, n° d'équipage facultatif, équipe, signature).
 4. À chaque plein : **Ajouter un ticket** → photo → recadrage → vérifier les valeurs lues →
    cocher « J'ai vérifié » → **Valider**.
+   Variante : **Plusieurs tickets sur une photo** → photographier une planche de tickets
+   (posés à plat, sans chevauchement, avec un peu d'espace) → l'appli détecte chaque ticket,
+   les lit, les range par date, puis les présente un par un pour validation.
 5. En fin d'année : **PDF** → **Générer le PDF** → Partager / Enregistrer.
 6. Penser à **Exporter** régulièrement une sauvegarde (fichier `.json`).
 
@@ -50,6 +53,7 @@ jour automatique ; les données sont liées au navigateur qui a ouvert le fichie
 - `js/layout.js` – emplacements des champs sur le justificatif
 - `js/pdf.js` – génération du PDF (pdf-lib)
 - `js/ocr.js` – lecture des tickets (Tesseract.js, français)
+- `js/segment.js` – détection de plusieurs tickets sur une photo
 - `js/imaging.js` – recadrage, compression, extraction de la signature
 - `js/store.js` – stockage local
 - `tools/build_single.py` – construction de la version fichier unique

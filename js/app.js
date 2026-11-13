@@ -3,6 +3,7 @@ import { EQUIPES, FUELS } from './layout.js';
 import { formatEuros, parseEuros, centsToInput, formatDateFr, todayIso, escapeHtml } from './format.js';
 import { loadImage, toCanvas, rotate90, compressForStorage, extractSignature, trimTransparent, canvasToBlob } from './imaging.js';
 import { recognize } from './ocr.js';
+import { detectTickets, cropRect } from './segment.js';
 import { buildPdf, checkTemplate } from './pdf.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -309,7 +310,10 @@ function setAuto(el, on) { el.classList.toggle('auto', on); }
 function openTicketForm({ id = null, blob, canvas = null, date = '', fuel = '', amount = null, createdAt = null }) {
   tk.id = id; tk.blob = blob; tk.canvas = canvas; tk.createdAt = createdAt; tk.touched = new Set();
   tk.ocrRun++;
-  $('#ticket-title').textContent = id ? 'Modifier le ticket' : 'Vérifier le ticket';
+  const b = tk.batch;
+  $('#ticket-title').innerHTML = b
+    ? `Vérifier le ticket <span class="batch-badge">${b.index + 1} / ${b.items.length}</span>`
+    : (id ? 'Modifier le ticket' : 'Vérifier le ticket');
   const img = $('#ticket-img');
   if (img.dataset.url) URL.revokeObjectURL(img.dataset.url);
   img.dataset.url = URL.createObjectURL(blob);
@@ -324,12 +328,14 @@ function openTicketForm({ id = null, blob, canvas = null, date = '', fuel = '', 
   $('#amount-candidates').hidden = true;
   $('#t-checked').checked = false;
   $('#btn-ticket-delete').hidden = !id;
-  $('#btn-ticket-retake').textContent = id ? 'Changer la photo' : 'Reprendre';
+  $('#btn-ticket-retake').textContent = b ? 'Ignorer' : (id ? 'Changer la photo' : 'Reprendre');
+  $('#btn-ticket-save').textContent = b && b.index < b.items.length - 1 ? 'Valider → suivant' : 'Valider';
   updateTicketValidity();
   showNext('ticket');
 }
 
 async function addTicket() {
+  tk.batch = null;
   const canvas = await captureImage('Photographier le ticket');
   if (!canvas) { if (!$('#editor').hidden) back(); return; }
   const blob = await compressForStorage(canvas);
@@ -341,6 +347,7 @@ async function addTicket() {
 
 function editTicket(t) {
   if (!t) return;
+  tk.batch = null;
   openTicketForm({ id: t.id, blob: t.image, date: t.date, fuel: t.fuel, amount: t.amount, createdAt: t.createdAt });
 }
 
@@ -357,27 +364,33 @@ async function runOcr(canvas) {
       else if (m.status && m.status.includes('load')) status.textContent = 'Préparation de la lecture automatique…';
     });
     if (run !== tk.ocrRun) return;
-    const found = [];
-    if (res.date && !tk.touched.has('date')) { $('#t-date').value = res.date; setAuto($('#t-date'), true); found.push('date'); }
-    if (res.fuel && !tk.touched.has('fuel')) { fillFuelSelect(res.fuel); setAuto($('#t-fuel'), true); found.push('carburant'); }
-    if (res.amount != null && !tk.touched.has('amount')) { $('#t-amount').value = centsToInput(res.amount); setAuto($('#t-amount'), true); found.push('montant'); }
-    status.className = found.length ? 'banner warn' : 'banner info';
-    status.textContent = found.length
-      ? `Lu automatiquement : ${found.join(', ')}. Les champs en orange sont à vérifier avec le ticket.`
-      : 'Rien n\'a pu être lu automatiquement. Saisissez les valeurs du ticket.';
-    if (res.otherItems.length) {
-      const o = $('#other-items');
-      o.hidden = false;
-      o.innerHTML = `<b>Attention :</b> ce ticket semble contenir autre chose que du carburant (${escapeHtml(res.otherItems.slice(0, 4).join(', ').toLowerCase())}). Indiquez uniquement le montant du carburant.`;
-    }
-    renderCandidates(res.candidates);
-    updateTicketValidity();
+    applyOcr(res);
   } catch (err) {
     console.error(err);
     if (run !== tk.ocrRun) return;
     status.className = 'banner info';
     status.textContent = 'Lecture automatique indisponible. Saisissez les valeurs du ticket.';
   }
+}
+
+function applyOcr(res) {
+  const status = $('#ocr-status');
+  status.hidden = false;
+  const found = [];
+  if (res.date && !tk.touched.has('date')) { $('#t-date').value = res.date; setAuto($('#t-date'), true); found.push('date'); }
+  if (res.fuel && !tk.touched.has('fuel')) { fillFuelSelect(res.fuel); setAuto($('#t-fuel'), true); found.push('carburant'); }
+  if (res.amount != null && !tk.touched.has('amount')) { $('#t-amount').value = centsToInput(res.amount); setAuto($('#t-amount'), true); found.push('montant'); }
+  status.className = found.length ? 'banner warn' : 'banner info';
+  status.textContent = found.length
+    ? `Lu automatiquement : ${found.join(', ')}. Les champs en orange sont à vérifier avec le ticket.`
+    : 'Rien n\'a pu être lu automatiquement. Saisissez les valeurs du ticket.';
+  const o = $('#other-items');
+  o.hidden = !res.otherItems.length;
+  if (res.otherItems.length) {
+    o.innerHTML = `<b>Attention :</b> ce ticket semble contenir autre chose que du carburant (${escapeHtml(res.otherItems.slice(0, 4).join(', ').toLowerCase())}). Indiquez uniquement le montant du carburant.`;
+  }
+  renderCandidates(res.candidates);
+  updateTicketValidity();
 }
 
 function renderCandidates(cands) {
@@ -447,6 +460,7 @@ $('#btn-ticket-save').addEventListener('click', async () => {
   // l'année affichée suit le ticket ajouté
   const y = +date.slice(0, 4);
   if (y !== state.year) { state.year = y; await store.kvSet('year', y); }
+  if (tk.batch) { tk.batch.saved++; nextBatchItem(); return; }
   toast(`Ticket enregistré : ${formatEuros(amount)}`);
   goHome();
 });
@@ -462,6 +476,7 @@ $('#btn-ticket-delete').addEventListener('click', async () => {
 });
 
 $('#btn-ticket-retake').addEventListener('click', async () => {
+  if (tk.batch) { nextBatchItem(); return; } // « Ignorer »
   const canvas = await captureImage('Photographier le ticket');
   if (!canvas) { if (!$('#editor').hidden) back(); return; }
   tk.blob = await compressForStorage(canvas);
@@ -475,6 +490,103 @@ $('#btn-ticket-retake').addEventListener('click', async () => {
   updateTicketValidity();
   runOcr(canvas);
 });
+
+// ---------------------------------------------------------------------------
+// Plusieurs tickets sur une même photo
+
+const bt = { image: null, rects: [], off: new Set(), url: null };
+
+async function addBatch() {
+  const file = await pickImage('Photographier les tickets');
+  if (!file) return;
+  let img;
+  try { img = await loadImage(file); } catch (_) { toast('Image illisible.'); return; }
+  bt.image = toCanvas(img, 3200);
+  bt.rects = detectTickets(bt.image);
+  bt.off = new Set();
+  if (bt.url) URL.revokeObjectURL(bt.url);
+  bt.url = URL.createObjectURL(await compressForStorage(bt.image));
+  $('#batch-img').src = bt.url;
+  renderBatchBoxes();
+  $('#btn-batch-go').disabled = false;
+  $('#btn-batch-retake').disabled = false;
+  show('batch');
+}
+
+function renderBatchBoxes() {
+  const W = bt.image.width, H = bt.image.height;
+  $('#batch-boxes').innerHTML = bt.rects.map((r, i) => `
+    <button type="button" class="bbox ${bt.off.has(i) ? 'off' : ''}" data-i="${i}"
+      style="left:${(r.x / W) * 100}%;top:${(r.y / H) * 100}%;width:${(r.w / W) * 100}%;height:${(r.h / H) * 100}%"><span>${i + 1}</span></button>`).join('');
+  $('#batch-boxes').querySelectorAll('.bbox').forEach((b) => b.addEventListener('click', () => {
+    const i = +b.dataset.i;
+    if (bt.off.has(i)) bt.off.delete(i); else bt.off.add(i);
+    renderBatchBoxes();
+  }));
+  const n = bt.rects.length - bt.off.size;
+  const info = $('#batch-info');
+  info.className = bt.rects.length ? 'banner info' : 'banner warn';
+  info.textContent = bt.rects.length
+    ? `${bt.rects.length} ticket${bt.rects.length > 1 ? 's' : ''} détecté${bt.rects.length > 1 ? 's' : ''}. Vérifiez que chaque ticket a son propre cadre.`
+    : 'Aucun ticket détecté. Posez les tickets bien à plat, sans qu\'ils se chevauchent, avec un peu d\'espace entre eux, et reprenez la photo.';
+  $('#btn-batch-go').textContent = n ? `Lire ${n} ticket${n > 1 ? 's' : ''}` : 'Lire les tickets';
+  $('#btn-batch-go').disabled = !n;
+}
+
+$('#btn-add-batch').addEventListener('click', addBatch);
+$('#btn-batch-retake').addEventListener('click', () => { back(); setTimeout(addBatch, 50); });
+$('#btn-batch-go').addEventListener('click', async () => {
+  const chosen = bt.rects.filter((_, i) => !bt.off.has(i));
+  if (!chosen.length) return;
+  $('#btn-batch-go').disabled = true;
+  $('#btn-batch-retake').disabled = true;
+  const info = $('#batch-info');
+  info.className = 'banner info';
+  const items = [];
+  for (let k = 0; k < chosen.length; k++) {
+    info.textContent = `Lecture du ticket ${k + 1} / ${chosen.length}…`;
+    const canvas = cropRect(bt.image, chosen[k]);
+    let res = null;
+    try {
+      res = await recognize(canvas, (m) => {
+        if (m.status === 'recognizing text') info.textContent = `Lecture du ticket ${k + 1} / ${chosen.length}… ${Math.round(m.progress * 100)} %`;
+      });
+    } catch (err) { console.error(err); }
+    items.push({ canvas, blob: await compressForStorage(canvas), res, order: k });
+  }
+  // ordre chronologique (les dates non lues à la fin)
+  items.sort((a, b) => {
+    const da = a.res && a.res.date, db = b.res && b.res.date;
+    if (da && db) return da.localeCompare(db) || a.order - b.order;
+    if (da) return -1;
+    if (db) return 1;
+    return a.order - b.order;
+  });
+  tk.batch = { items, index: -1, saved: 0 };
+  replaceNext = true;
+  nextBatchItem();
+});
+
+function nextBatchItem() {
+  const b = tk.batch;
+  b.index++;
+  if (b.index >= b.items.length) {
+    const saved = b.saved, total = b.items.length;
+    tk.batch = null;
+    toast(`${saved} ticket${saved > 1 ? 's' : ''} enregistré${saved > 1 ? 's' : ''} sur ${total}.`, 3500);
+    goHome();
+    return;
+  }
+  const it = b.items[b.index];
+  if (b.index > 0) replaceNext = true; // l'écran suivant remplace le précédent
+  openTicketForm({ blob: it.blob, canvas: it.canvas });
+  if (it.res) applyOcr(it.res);
+  else {
+    $('#ocr-status').hidden = false;
+    $('#ocr-status').className = 'banner info';
+    $('#ocr-status').textContent = 'Lecture automatique indisponible. Saisissez les valeurs du ticket.';
+  }
+}
 
 $('#btn-ticket-zoom').addEventListener('click', () => openViewer($('#ticket-img').src));
 $('#ticket-img').addEventListener('click', () => openViewer($('#ticket-img').src));
