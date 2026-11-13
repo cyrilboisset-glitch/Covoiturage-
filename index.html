@@ -33,6 +33,7 @@
       <div class="total-value" id="total-value">0,00 €</div>
       <div class="total-sub" id="total-sub">Aucun ticket</div>
     </div>
+    <div id="cap-warning" class="banner error" hidden></div>
 
     <h2 class="section-title">Tickets <span class="muted">(par date)</span></h2>
     <button class="btn secondary block" id="btn-add-batch">🗂️ Plusieurs tickets sur une photo</button>
@@ -74,6 +75,12 @@
       </label>
       <label class="field">N° d'équipage <span class="muted">(facultatif, 6 caractères max.)</span>
         <input type="text" id="s-equipage" maxlength="6" inputmode="text" autocapitalize="characters">
+      </label>
+      <label class="field">Maximum annuel des justificatifs de frais (€)
+        <input type="text" id="s-plafond" inputmode="decimal" placeholder="785,00">
+      </label>
+      <label class="field">Adresse e-mail d'envoi du dossier
+        <input type="email" id="s-email" inputmode="email" autocapitalize="off" placeholder="crolles.transport@st.com">
       </label>
       <fieldset class="field">
         <legend>Équipe</legend>
@@ -246,6 +253,21 @@
       <button class="btn primary big block" id="btn-pdf-share">📤 Partager / envoyer</button>
       <a class="btn secondary big block" id="btn-pdf-download" download>⬇️ Enregistrer sur le téléphone</a>
       <a class="btn secondary big block" id="btn-pdf-open" target="_blank" rel="noopener">👁️ Ouvrir / vérifier</a>
+
+      <h2 class="section-title">Envoyer par e-mail</h2>
+      <label class="field">À
+        <input type="email" id="m-to" inputmode="email" autocapitalize="off">
+      </label>
+      <label class="field">Objet
+        <input type="text" id="m-subject">
+      </label>
+      <label class="field">Message
+        <textarea id="m-body" rows="11"></textarea>
+      </label>
+      <button class="btn primary big block" id="btn-mail-share">📧 Envoyer avec le PDF joint</button>
+      <p class="hint" id="mail-share-hint">Choisissez votre messagerie (Gmail, Outlook…) : le PDF, l'objet et le message sont joints, et l'adresse est copiée, il suffit de la coller dans « À ».</p>
+      <a class="btn secondary big block" id="btn-mail-open">✉️ Ouvrir ma messagerie (PDF à joindre)</a>
+      <p class="hint">Ce bouton pré-remplit l'adresse, l'objet et le message, mais une page web ne peut pas joindre de fichier : ajoutez le PDF enregistré sur le téléphone.</p>
     </div>
     <div class="bottom-spacer"></div>
     <nav class="actionbar">

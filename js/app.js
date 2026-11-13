@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { EQUIPES, FUELS } from './layout.js';
+import { EQUIPES, FUELS, DEFAULTS } from './layout.js';
 import { formatEuros, parseEuros, centsToInput, formatDateFr, todayIso, escapeHtml } from './format.js';
 import { loadImage, toCanvas, rotate90, compressForStorage, extractSignature, trimTransparent, canvasToBlob } from './imaging.js';
 import { recognize } from './ocr.js';
@@ -8,7 +8,7 @@ import { buildPdf, checkTemplate } from './pdf.js';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
-  settings: { nom: '', prenom: '', equipage: '', equipe: '' },
+  settings: { nom: '', prenom: '', equipage: '', equipe: '', plafond: DEFAULTS.plafond, emailTo: DEFAULTS.emailTo },
   signature: null, // Blob PNG
   template: null, // Blob PDF du justificatif vierge
   tickets: [],
@@ -95,6 +95,16 @@ function thumbUrl(obj) {
   return thumbUrls.get(key);
 }
 
+function plafond() { return state.settings.plafond || DEFAULTS.plafond; }
+function yearTotal(year = state.year) {
+  return state.tickets.filter((t) => t.date.startsWith(String(year))).reduce((s, t) => s + t.amount, 0);
+}
+function capWarning(total, year = state.year) {
+  if (!plafond() || total < plafond()) return '';
+  return `⚠️ Maximum des justificatifs de frais atteint : ${formatEuros(total)} en ${year} pour un maximum de ${formatEuros(plafond())}`
+    + (total > plafond() ? ` (dépassement de ${formatEuros(total - plafond())}).` : '.');
+}
+
 function renderHome() {
   // années disponibles
   const years = new Set([new Date().getFullYear(), state.year, ...state.tickets.map((t) => +t.date.slice(0, 4))]);
@@ -114,6 +124,9 @@ function renderHome() {
   const list = ticketsOfYear();
   const total = list.reduce((s, t) => s + t.amount, 0);
   $('#total-value').textContent = formatEuros(total);
+  const cap = capWarning(total);
+  $('#cap-warning').hidden = !cap;
+  $('#cap-warning').textContent = cap || '';
   $('#total-sub').textContent = list.length ? `${list.length} ticket${list.length > 1 ? 's' : ''} en ${state.year}` : `Aucun ticket en ${state.year}`;
 
   $('#ticket-empty').hidden = list.length > 0;
@@ -453,10 +466,13 @@ $('#btn-ticket-save').addEventListener('click', async () => {
     createdAt: tk.createdAt || Date.now(),
     updatedAt: Date.now(),
   };
+  const before = yearTotal(+date.slice(0, 4));
   await store.put('tickets', t);
   const i = state.tickets.findIndex((x) => x.id === t.id);
   if (i >= 0) state.tickets[i] = t; else state.tickets.push(t);
   tk.ocrRun++;
+  const after = yearTotal(+date.slice(0, 4));
+  if (before < plafond() && after >= plafond()) alert(capWarning(after, date.slice(0, 4)));
   // l'année affichée suit le ticket ajouté
   const y = +date.slice(0, 4);
   if (y !== state.year) { state.year = y; await store.kvSet('year', y); }
@@ -666,6 +682,8 @@ function openSettings(firstRun = false) {
   $('#s-nom').value = s.nom || '';
   $('#s-prenom').value = s.prenom || '';
   $('#s-equipage').value = s.equipage || '';
+  $('#s-plafond').value = centsToInput(s.plafond || DEFAULTS.plafond);
+  $('#s-email').value = s.emailTo || DEFAULTS.emailTo;
   $('#s-equipe').innerHTML = EQUIPES.map((e) => `
     <label class="choice"><input type="radio" name="equipe" value="${e}" ${s.equipe === e ? 'checked' : ''}><span>${e}</span></label>`).join('');
   draftSignature = undefined;
@@ -695,6 +713,8 @@ $('#settings-form').addEventListener('submit', async (e) => {
     prenom: $('#s-prenom').value.trim(),
     equipage: $('#s-equipage').value.trim(),
     equipe,
+    plafond: parseEuros($('#s-plafond').value) || DEFAULTS.plafond,
+    emailTo: $('#s-email').value.trim() || DEFAULTS.emailTo,
   };
   if (!s.nom || !s.prenom) { toast('Indiquez votre nom et votre prénom.'); return; }
   if (!s.equipe) { toast('Choisissez votre équipe.'); return; }
@@ -858,6 +878,7 @@ function openPdfScreen() {
     <div class="sum-row"><span>Tickets</span><b>${list.length} (${Math.ceil(list.length / 9)} page${list.length > 9 ? 's' : ''})</b></div>
     <div class="sum-row"><span>Autres documents</span><b>${state.docs.length}</b></div>
     <div class="sum-row total"><span>Montant total</span><b>${formatEuros(total)}</b></div>
+    ${capWarning(total) ? `<div class="banner error">${capWarning(total)}</div>` : ''}
     ${issues.length ? `<div class="banner warn">À vérifier : ${issues.join(', ')}.</div>` : ''}
     <p class="hint">La case « DATE » à côté de la signature reçoit la date du jour de création du PDF (${formatDateFr(todayIso())}).</p>`;
   $('#pdf-progress').hidden = true;
@@ -898,6 +919,7 @@ $('#btn-pdf-generate').addEventListener('click', async () => {
     $('#pdf-ok').textContent = `✅ ${pdfName} — ${(pdfBlob.size / 1024 / 1024).toFixed(1).replace('.', ',')} Mo`;
     prog.hidden = true;
     $('#pdf-result').hidden = false;
+    prefillMail(list);
     $('#btn-pdf-share').hidden = !(navigator.canShare && navigator.canShare({ files: [new File([pdfBlob], pdfName, { type: 'application/pdf' })] }));
   } catch (err) {
     console.error(err);
@@ -906,6 +928,56 @@ $('#btn-pdf-generate').addEventListener('click', async () => {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Générer à nouveau';
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Envoi par e-mail
+
+function prefillMail(list) {
+  const st = state.settings;
+  const who = [st.prenom, st.nom].filter(Boolean).join(' ');
+  const total = list.reduce((s, t) => s + t.amount, 0);
+  const sheets = Math.max(1, Math.ceil(list.length / 16));
+  const dates = list.map((t) => t.date).sort();
+  const lines = [
+    'Bonjour,',
+    '',
+    `Veuillez trouver ci-joint mon dossier de justificatifs de frais de covoiturage pour l'année ${state.year}.`,
+    '',
+    'Contenu du PDF :',
+    `- justificatif de frais rempli et signé (${sheets} feuille${sheets > 1 ? 's' : ''}) ;`,
+    `- ${list.length} ticket${list.length > 1 ? 's' : ''} de carburant${dates.length ? ` (du ${formatDateFr(dates[0])} au ${formatDateFr(dates[dates.length - 1])})` : ''} ;`,
+  ];
+  if (state.docs.length) lines.push(`- autre${state.docs.length > 1 ? 's' : ''} document${state.docs.length > 1 ? 's' : ''} : ${state.docs.map((d) => d.name).join(', ')} ;`);
+  lines.push('', `Montant total des justificatifs : ${formatEuros(total)}.`);
+  if (plafond() && total >= plafond()) lines.push(`Ce montant ${total > plafond() ? 'dépasse' : 'atteint'} le maximum de ${formatEuros(plafond())} des justificatifs de frais.`);
+  lines.push('', 'Cordialement,', who);
+  if (st.equipe) lines.push(`Équipe ${st.equipe}`);
+  $('#m-to').value = st.emailTo || DEFAULTS.emailTo;
+  $('#m-subject').value = `Justificatifs de frais covoiturage ${state.year}${who ? ' – ' + who : ''}`;
+  $('#m-body').value = lines.join('\n');
+  updateMailLink();
+  const canShare = !!(navigator.canShare && navigator.canShare({ files: [new File([pdfBlob], pdfName, { type: 'application/pdf' })] }));
+  $('#btn-mail-share').hidden = !canShare;
+  $('#mail-share-hint').hidden = !canShare;
+}
+
+function updateMailLink() {
+  const q = `subject=${encodeURIComponent($('#m-subject').value)}&body=${encodeURIComponent($('#m-body').value)}`;
+  $('#btn-mail-open').href = `mailto:${encodeURI($('#m-to').value.trim())}?${q}`;
+}
+['#m-to', '#m-subject', '#m-body'].forEach((sel) => $(sel).addEventListener('input', updateMailLink));
+
+$('#btn-mail-share').addEventListener('click', async () => {
+  if (!pdfBlob) return;
+  const to = $('#m-to').value.trim();
+  try { await navigator.clipboard.writeText(to); toast(`Adresse copiée : ${to}`); } catch (_) { /* presse-papiers indisponible */ }
+  const file = new File([pdfBlob], pdfName, { type: 'application/pdf' });
+  try {
+    await navigator.share({ files: [file], title: $('#m-subject').value, text: $('#m-body').value });
+  } catch (err) {
+    if (err.name !== 'AbortError') toast('Partage impossible : utilisez « Ouvrir ma messagerie ».', 4000);
   }
 });
 

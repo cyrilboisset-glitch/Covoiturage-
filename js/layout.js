@@ -55,3 +55,9 @@ export const FUELS = [
   'GPL',
   'HVO100',
 ];
+
+// Valeurs par défaut modifiables dans les Réglages
+export const DEFAULTS = {
+  plafond: 78500, // maximum annuel des justificatifs de frais, en centimes (785 €)
+  emailTo: 'crolles.transport@st.com',
+};
