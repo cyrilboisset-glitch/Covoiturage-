@@ -4,6 +4,10 @@ import { formatEuros, parseEuros, centsToInput, formatDateFr, todayIso, escapeHt
 import { loadImage, toCanvas, rotate90, compressForStorage, extractSignature, trimTransparent, canvasToBlob } from './imaging.js';
 import { recognize } from './ocr.js';
 import { detectTickets, cropRect } from './segment.js';
+import { recognizeText } from './ocr.js';
+import { parseCarteGrise } from './cartegrise.js';
+import { zoneForCommune, zoneLabel } from './zones.js';
+import { buildConvention, TAUX, PIECES } from './convention.js';
 import { buildPdf, checkTemplate } from './pdf.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -40,6 +44,7 @@ window.addEventListener('popstate', (e) => {
   const id = stack[stack.length - 1] || 'home';
   show(id, 'none');
   if (id === 'home') renderHome();
+  if (id === 'renew') renderRenew();
 });
 // Retour à l'accueil en vidant la pile
 function goHome() {
@@ -68,6 +73,13 @@ async function loadAll() {
   if (!state.template && window.__INLINE__ && window.__INLINE__.has('template')) {
     state.template = new Blob([window.__INLINE__.bytes('template')], { type: 'application/pdf' });
   }
+  state.convTemplate = (await store.kvGet('convTemplate')) || null;
+  if (!state.convTemplate && window.__INLINE__ && window.__INLINE__.has('convention')) {
+    state.convTemplate = new Blob([window.__INLINE__.bytes('convention')], { type: 'application/pdf' });
+  }
+  state.fiche = (await store.kvGet('fiche')) || emptyFiche();
+  state.crew = (await store.kvGet('crew')) || [];
+  state.renewCfg = (await store.kvGet('renew')) || { taux: '', faitA: '' };
   state.tickets = await store.getAll('tickets');
   state.docs = await store.getAll('docs');
   const y = await store.kvGet('year');
@@ -689,6 +701,7 @@ function openSettings(firstRun = false) {
   draftSignature = undefined;
   renderSigPreview();
   renderTplStatus();
+  renderConvTplStatus();
   show('settings');
 }
 
@@ -1008,6 +1021,10 @@ $('#btn-export').addEventListener('click', async () => {
     template: state.template ? await blobToDataUrl(state.template) : null,
     tickets: await Promise.all(state.tickets.map(async (t) => ({ ...t, image: await blobToDataUrl(t.image) }))),
     docs: await Promise.all(state.docs.map(async (d) => ({ ...d, image: await blobToDataUrl(d.image) }))),
+    convTemplate: state.convTemplate ? await blobToDataUrl(state.convTemplate) : null,
+    fiche: await ficheToJson(state.fiche),
+    crew: await Promise.all(state.crew.map(memberToJson)),
+    renew: state.renewCfg,
   };
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
   const name = `covoiturage-sauvegarde-${todayIso()}.json`;
@@ -1030,6 +1047,7 @@ $('#import-input').addEventListener('change', async (e) => {
   let data;
   try { data = JSON.parse(await file.text()); } catch (_) { toast('Fichier de sauvegarde illisible.'); return; }
   if (!data || data.app !== 'covoiturage-pde') { toast('Ce fichier n\'est pas une sauvegarde de cette appli.'); return; }
+  if (data.kind === 'equipage') { toast('Ce fichier est le dossier d\'un covoitureur : importez-le dans l\'onglet Renouvellement.', 5000); return; }
   const n = (data.tickets || []).length, m = (data.docs || []).length;
   if (!confirm(`Restaurer cette sauvegarde (${n} tickets, ${m} documents) ?\nToutes les données actuelles de l'appli seront remplacées.`)) return;
   try {
@@ -1044,12 +1062,400 @@ $('#import-input').addEventListener('change', async (e) => {
     await store.kvSet('settings', data.settings || {});
     if (signature) await store.kvSet('signature', signature); else await store.kvDel('signature');
     if (template) await store.kvSet('template', template);
+    if (data.convTemplate) await store.kvSet('convTemplate', await dataUrlToBlob(data.convTemplate));
+    if (data.fiche) await store.kvSet('fiche', await ficheFromJson(data.fiche));
+    if (data.crew) await store.kvSet('crew', await Promise.all(data.crew.map(memberFromJson)));
+    if (data.renew) await store.kvSet('renew', data.renew);
     await loadAll();
     renderHome();
     toast('Sauvegarde restaurée.');
   } catch (err) {
     console.error(err);
     toast('Restauration impossible : ' + (err.message || err), 4000);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Renouvellement : fiche covoitureur, équipage, convention
+
+function emptyFiche() {
+  return { adresse: '', commune: '', badge: '', contrat: '', km: '',
+    vehicule: { marque: '', type: '', puissance: '', immatriculation: '' },
+    pieces: { permis: [], carteGrise: [], assurance: [] }, updatedAt: 0 };
+}
+
+const normKey = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+function sameMember(a, b) {
+  if (a.badge && b.badge && normKey(a.badge) === normKey(b.badge)) return true;
+  return normKey(a.nom + a.prenom) !== '' && normKey(a.nom + a.prenom) === normKey(b.nom + b.prenom);
+}
+
+function selfMember() {
+  const st = state.settings, f = state.fiche;
+  return {
+    nom: st.nom || '', prenom: st.prenom || '',
+    badge: f.badge, contrat: f.contrat,
+    horaire: st.equipe === 'Journée' ? 'J' : (st.equipe || ''),
+    adresse: f.adresse, commune: f.commune, zone: zoneForCommune(f.commune), km: f.km,
+    vehicule: { ...f.vehicule }, signature: state.signature, pieces: f.pieces, updatedAt: f.updatedAt || Date.now(),
+  };
+}
+const allMembers = () => [selfMember(), ...state.crew];
+
+function missingOf(m) {
+  const miss = [];
+  const v = m.vehicule || {};
+  const req = [['nom', m.nom], ['prénom', m.prenom], ['badge', m.badge], ['contrat', m.contrat], ['horaire', m.horaire],
+    ['commune', m.commune], ['km', m.km], ['marque', v.marque], ['type', v.type], ['puissance', v.puissance],
+    ['immatriculation', v.immatriculation]];
+  for (const [label, val] of req) if (!String(val || '').trim()) miss.push(label);
+  if (!m.signature) miss.push('signature');
+  for (const [k, label] of PIECES) if (!((m.pieces || {})[k] || []).length) miss.push(label.toLowerCase());
+  return miss;
+}
+
+// (dé)sérialisation : les images deviennent des data URL dans le fichier échangé
+const piecesToJson = async (p = {}) => Object.fromEntries(await Promise.all(PIECES.map(async ([k]) => [k, await Promise.all((p[k] || []).map(blobToDataUrl))])));
+const piecesFromJson = async (p = {}) => Object.fromEntries(await Promise.all(PIECES.map(async ([k]) => [k, await Promise.all((p[k] || []).map(dataUrlToBlob))])));
+async function memberToJson(m) {
+  return { ...m, signature: m.signature ? await blobToDataUrl(m.signature) : null, pieces: await piecesToJson(m.pieces) };
+}
+async function memberFromJson(m) {
+  return { ...m, signature: m.signature ? await dataUrlToBlob(m.signature) : null, pieces: await piecesFromJson(m.pieces),
+    zone: zoneForCommune(m.commune) };
+}
+const ficheToJson = async (f) => ({ ...f, pieces: await piecesToJson(f.pieces) });
+const ficheFromJson = async (f) => ({ ...emptyFiche(), ...f, pieces: await piecesFromJson(f.pieces) });
+
+function conventionYear() {
+  const d = new Date();
+  return d.getMonth() >= 10 ? d.getFullYear() + 1 : d.getFullYear(); // à partir de novembre : année suivante
+}
+
+function memberCard(m, isSelf) {
+  const v = m.vehicule || {};
+  const miss = missingOf(m);
+  const nb = (k) => ((m.pieces || {})[k] || []).length;
+  return `
+    <h3>${escapeHtml(`${m.prenom} ${m.nom}`.trim() || 'Nom et prénom à remplir dans Réglages')}${isSelf ? ' <span class="muted">(moi)</span>' : ''}</h3>
+    <div class="kv"><span>Commune</span><span>${escapeHtml(m.commune || '—')}</span></div>
+    <div class="kv"><span>Zone</span><span>${escapeHtml(zoneLabel(zoneForCommune(m.commune)))}</span></div>
+    <div class="kv"><span>Badge · contrat · horaire</span><span>${escapeHtml([m.badge || '—', m.contrat || '—', m.horaire || '—'].join(' · '))}</span></div>
+    <div class="kv"><span>Km (aller)</span><span>${escapeHtml(m.km || '—')}</span></div>
+    <div class="kv"><span>Véhicule</span><span>${escapeHtml([v.marque, v.type, v.puissance ? v.puissance + ' CV' : ''].filter(Boolean).join(' ') || '—')}</span></div>
+    <div class="kv"><span>Immatriculation</span><span>${escapeHtml(v.immatriculation || '—')}</span></div>
+    <div class="kv"><span>Pièces</span><span>permis ${nb('permis')} · carte grise ${nb('carteGrise')} · assurance ${nb('assurance')}</span></div>
+    <div class="kv"><span>Signature</span><span>${m.signature ? '✅' : '—'}</span></div>
+    ${miss.length ? `<div class="missing">À compléter : ${escapeHtml(miss.join(', '))}</div>` : '<div class="complete">✅ Fiche complète</div>'}`;
+}
+
+function renderRenew() {
+  const y = conventionYear();
+  $('#renew-deadline').innerHTML = `Convention ${y} : à envoyer <b>avant le 1er mars ${y}</b> pour une prise d'effet au 1er janvier. Après cette date, elle prend effet à la date d'envoi par e-mail (enregistrement jusqu'au 31 octobre).`
+    + (state.renewCfg.sentAt ? `<br>Dernier envoi préparé le ${formatDateFr(state.renewCfg.sentAt)}.` : '');
+  $('#fiche-card').innerHTML = memberCard(selfMember(), true);
+  $('#crew-list').innerHTML = state.crew.map((m, i) => `
+    <li class="item" data-i="${i}">
+      <div class="item-main"><div class="item-title">${i + 2}. ${escapeHtml(`${m.prenom} ${m.nom}`)}</div>
+      <div class="item-sub">${escapeHtml(m.commune || '—')} · ${escapeHtml(zoneLabel(zoneForCommune(m.commune)))}</div></div>
+      <div class="item-amount">${missingOf(m).length ? '⚠️' : '✅'}</div>
+    </li>`).join('') || '<li class="empty">Aucun autre covoitureur importé pour l\'instant.</li>';
+  $('#crew-list').querySelectorAll('.item').forEach((li) => li.addEventListener('click', () => openMember(+li.dataset.i)));
+  $('#r-taux').innerHTML = TAUX.map(([k, label]) => `
+    <label class="choice"><input type="radio" name="taux" value="${k}" ${state.renewCfg.taux === k ? 'checked' : ''}><span>${label}</span></label>`).join('');
+  $('#r-taux').querySelectorAll('input').forEach((r) => r.addEventListener('change', () => saveRenewCfg({ taux: r.value })));
+  $('#r-faita').value = state.renewCfg.faitA || '';
+}
+
+async function saveRenewCfg(patch) {
+  state.renewCfg = { ...state.renewCfg, ...patch };
+  await store.kvSet('renew', state.renewCfg);
+}
+$('#r-faita').addEventListener('change', () => saveRenewCfg({ faitA: $('#r-faita').value.trim() }));
+
+// Onglets
+document.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
+  const id = b.dataset.tab;
+  show(id, 'replace');
+  if (id === 'home') renderHome(); else renderRenew();
+}));
+document.querySelectorAll('[data-open-settings]').forEach((b) => b.addEventListener('click', () => openSettings()));
+
+// --- Ma fiche
+let fd = null; // brouillon de la fiche
+const ficheFields = [['#f-adresse', 'adresse'], ['#f-commune', 'commune'], ['#f-badge', 'badge'], ['#f-km', 'km'],
+  ['#f-marque', 'v.marque'], ['#f-type', 'v.type'], ['#f-puissance', 'v.puissance'], ['#f-immat', 'v.immatriculation']];
+const getF = (k) => (k.startsWith('v.') ? fd.vehicule[k.slice(2)] : fd[k]) || '';
+
+function openFiche() {
+  fd = JSON.parse(JSON.stringify({ ...state.fiche, pieces: {} }));
+  fd.pieces = Object.fromEntries(PIECES.map(([k]) => [k, [...((state.fiche.pieces || {})[k] || [])]]));
+  const st = state.settings;
+  $('#f-from-settings').innerHTML = `Repris des Réglages : <b>${escapeHtml(`${st.prenom || '?'} ${st.nom || '?'}`)}</b>, horaire <b>${escapeHtml(st.equipe === 'Journée' ? 'J' : (st.equipe || '?'))}</b>, signature ${state.signature ? '✅' : '❌ (à ajouter dans Réglages)'}.`;
+  for (const [sel, k] of ficheFields) { $(sel).value = getF(k); $(sel).classList.remove('auto'); }
+  document.querySelectorAll('input[name="contrat"]').forEach((r) => { r.checked = r.value === fd.contrat; });
+  $('#f-ocr').hidden = true;
+  $('#f-checked').checked = false;
+  $('#btn-fiche-save').disabled = true;
+  updateZone();
+  renderPieces();
+  show('fiche');
+}
+$('#btn-fiche').addEventListener('click', openFiche);
+$('#fiche-card').addEventListener('click', openFiche);
+
+function updateZone() { $('#f-zone').textContent = `📍 ${zoneLabel(zoneForCommune($('#f-commune').value))}`; }
+$('#f-commune').addEventListener('input', updateZone);
+for (const [sel] of ficheFields) $(sel).addEventListener('input', () => { $(sel).classList.remove('auto'); $('#f-checked').checked = false; $('#btn-fiche-save').disabled = true; });
+$('#f-checked').addEventListener('change', () => { $('#btn-fiche-save').disabled = !$('#f-checked').checked; });
+
+function renderPieces() {
+  const box = $('#f-pieces');
+  box.innerHTML = PIECES.map(([k, label]) => `
+    <div class="piece"><div class="piece-title">${label}</div>
+      <div class="thumbs">${fd.pieces[k].map((b, i) => `<div class="thumb"><img data-k="${k}" data-i="${i}" alt=""><button type="button" data-del="${k}" data-i="${i}" aria-label="Supprimer">×</button></div>`).join('')}
+        <button type="button" class="btn secondary add" data-add="${k}">＋ ${fd.pieces[k].length ? 'Page' : 'Photo'}</button></div></div>`).join('');
+  box.querySelectorAll('img[data-k]').forEach((img) => {
+    const blob = fd.pieces[img.dataset.k][+img.dataset.i];
+    img.src = URL.createObjectURL(blob);
+    img.addEventListener('click', () => openViewer(img.src));
+  });
+  box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => {
+    fd.pieces[b.dataset.del].splice(+b.dataset.i, 1);
+    renderPieces();
+  }));
+  box.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', async () => {
+    const label = PIECES.find(([k]) => k === b.dataset.add)[1];
+    const canvas = await captureImage(`Photographier : ${label}`);
+    if (!canvas) return;
+    fd.pieces[b.dataset.add].push(await compressForStorage(canvas));
+    back();
+    renderPieces();
+  }));
+}
+
+$('#btn-read-cg').addEventListener('click', async () => {
+  const canvas = await captureImage('Photographier la carte grise');
+  if (!canvas) return;
+  const blob = await compressForStorage(canvas);
+  back();
+  if (fd.pieces.carteGrise.length && confirm('Remplacer la photo de carte grise déjà enregistrée ?')) fd.pieces.carteGrise = [];
+  fd.pieces.carteGrise.unshift(blob);
+  renderPieces();
+  const st = $('#f-ocr');
+  st.hidden = false;
+  st.className = 'banner info';
+  st.textContent = 'Lecture de la carte grise…';
+  try {
+    const text = await recognizeText(canvas, (m) => {
+      if (m.status === 'recognizing text') st.textContent = `Lecture de la carte grise… ${Math.round(m.progress * 100)} %`;
+    });
+    const r = parseCarteGrise(text);
+    const map = { adresse: '#f-adresse', commune: '#f-commune', marque: '#f-marque', type: '#f-type', puissance: '#f-puissance', immatriculation: '#f-immat' };
+    const found = [];
+    for (const [k, sel] of Object.entries(map)) {
+      if (r[k]) { $(sel).value = r[k]; $(sel).classList.add('auto'); found.push(k); }
+    }
+    updateZone();
+    $('#f-checked').checked = false;
+    $('#btn-fiche-save').disabled = true;
+    st.className = found.length ? 'banner warn' : 'banner info';
+    st.textContent = found.length
+      ? `Lu sur la carte grise : ${found.join(', ')}. Vérifiez les champs en orange ; complétez le reste à la main.`
+      : 'Rien n\'a pu être lu. Saisissez les informations à la main (photo bien nette, à plat, sans reflet).';
+  } catch (err) {
+    console.error(err);
+    st.textContent = 'Lecture automatique indisponible. Saisissez les informations à la main.';
+  }
+});
+
+$('#btn-fiche-save').addEventListener('click', async () => {
+  if (!$('#f-checked').checked) return;
+  const val = (sel) => $(sel).value.trim();
+  const f = {
+    adresse: val('#f-adresse'), commune: val('#f-commune'), badge: val('#f-badge'),
+    contrat: (document.querySelector('input[name="contrat"]:checked') || {}).value || '',
+    km: val('#f-km').replace('.', ','),
+    vehicule: { marque: val('#f-marque'), type: val('#f-type'), puissance: val('#f-puissance'), immatriculation: val('#f-immat').toUpperCase() },
+    pieces: fd.pieces, updatedAt: Date.now(),
+  };
+  state.fiche = f;
+  await store.kvSet('fiche', f);
+  toast('Fiche enregistrée.');
+  back();
+});
+
+// --- Équipage : export / import
+async function shareOrDownload(blob, name) {
+  const file = new File([blob], name, { type: blob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: name }); return; } catch (err) { if (err.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+
+$('#btn-crew-export').addEventListener('click', async () => {
+  const me = selfMember();
+  if (!me.nom || !me.prenom) { toast('Indiquez d\'abord votre nom et prénom dans les Réglages.'); return; }
+  const miss = missingOf(me);
+  if (miss.length && !confirm(`Votre fiche est incomplète (${miss.join(', ')}).\nEnvoyer quand même ?`)) return;
+  toast('Préparation du dossier…');
+  const data = {
+    app: 'covoiturage-pde', kind: 'equipage', format: 1, exportedAt: new Date().toISOString(),
+    from: `${me.prenom} ${me.nom}`, taux: state.renewCfg.taux || '',
+    members: await Promise.all(allMembers().map(memberToJson)),
+  };
+  const who = `${me.nom}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '_');
+  await shareOrDownload(new Blob([JSON.stringify(data)], { type: 'application/json' }), `covoiturage-dossier-${who}-${todayIso()}.json`);
+});
+
+$('#btn-crew-import').addEventListener('click', () => { $('#crew-input').value = ''; $('#crew-input').click(); });
+$('#crew-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  let data;
+  try { data = JSON.parse(await file.text()); } catch (_) { toast('Fichier illisible.'); return; }
+  if (!data || data.app !== 'covoiturage-pde' || data.kind !== 'equipage') {
+    toast(data && data.app === 'covoiturage-pde' ? 'Ce fichier est une sauvegarde, pas un dossier de covoitureur.' : 'Ce fichier n\'est pas un dossier de covoitureur.', 4500);
+    return;
+  }
+  const me = selfMember();
+  const crew = [...state.crew];
+  const added = [], updated = [];
+  for (const raw of data.members || []) {
+    const m = await memberFromJson(raw);
+    if (sameMember(m, me)) continue; // c'est moi : ma propre fiche fait foi
+    const i = crew.findIndex((c) => sameMember(c, m));
+    if (i < 0) { crew.push(m); added.push(`${m.prenom} ${m.nom}`); }
+    else if ((m.updatedAt || 0) > (crew[i].updatedAt || 0)) { crew[i] = m; updated.push(`${m.prenom} ${m.nom}`); }
+  }
+  if (crew.length + 1 > 5) { toast(`Un équipage compte 5 covoitureurs au maximum (${crew.length + 1} avec ce dossier). Retirez d'abord un covoitureur.`, 5000); return; }
+  state.crew = crew;
+  await store.kvSet('crew', crew);
+  if (!state.renewCfg.taux && data.taux) await saveRenewCfg({ taux: data.taux });
+  renderRenew();
+  const parts = [];
+  if (added.length) parts.push(`ajouté : ${added.join(', ')}`);
+  if (updated.length) parts.push(`mis à jour : ${updated.join(', ')}`);
+  toast(parts.length ? `Dossier importé (${parts.join(' ; ')}).` : 'Rien de nouveau dans ce dossier.', 4500);
+});
+
+// --- Covoitureur importé
+let memberIndex = -1;
+function openMember(i) {
+  memberIndex = i;
+  const m = state.crew[i];
+  $('#member-title').textContent = `${m.prenom} ${m.nom}`;
+  $('#member-card').innerHTML = memberCard(m, false) + '<p class="hint">Ces informations viennent du dossier envoyé par ce covoitureur. Pour les corriger, il doit modifier sa fiche et vous renvoyer son dossier.</p>';
+  show('member');
+}
+$('#btn-member-remove').addEventListener('click', async () => {
+  const m = state.crew[memberIndex];
+  if (!m || !confirm(`Retirer ${m.prenom} ${m.nom} de l'équipage ?`)) return;
+  state.crew.splice(memberIndex, 1);
+  await store.kvSet('crew', state.crew);
+  toast('Covoitureur retiré.');
+  back();
+});
+
+// --- Convention vierge (Réglages)
+function renderConvTplStatus() {
+  const st = $('#conv-tpl-status');
+  st.className = state.convTemplate ? 'banner info' : 'banner warn';
+  st.textContent = state.convTemplate ? '✅ Convention vierge enregistrée sur ce téléphone.' : 'Aucune convention vierge : importez le PDF « Convention commune covoiturage ».';
+  $('#btn-conv-tpl-import').textContent = state.convTemplate ? '📄 Remplacer la convention vierge' : '📄 Importer la convention vierge';
+}
+$('#btn-conv-tpl-import').addEventListener('click', () => { $('#conv-tpl-input').value = ''; $('#conv-tpl-input').click(); });
+$('#conv-tpl-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const blob = new Blob([await file.arrayBuffer()], { type: 'application/pdf' });
+    const info = await checkTemplate(blob);
+    if (info.alreadyFilled) { toast('Ce PDF a déjà été rempli par l\'appli : importez la convention vierge.', 5000); return; }
+    if ((!info.ok || info.pages !== 3) && !confirm(`Ce PDF ne ressemble pas à la convention attendue (3 pages au format Letter). Les valeurs risquent d'être mal placées. L'utiliser quand même ?`)) return;
+    state.convTemplate = blob;
+    await store.kvSet('convTemplate', blob);
+    renderConvTplStatus();
+    toast('Convention vierge enregistrée.');
+  } catch (err) {
+    toast('PDF illisible : ' + (err.message || err), 4000);
+  }
+});
+
+// --- Génération et envoi de la convention
+let convBlob = null, convUrl = null, convName = '';
+$('#btn-conv-generate').addEventListener('click', async () => {
+  if (!state.convTemplate) { toast('Importez d\'abord la convention vierge dans les Réglages.', 4000); openSettings(); return; }
+  const members = allMembers();
+  const incomplete = members.filter((m) => missingOf(m).length).map((m) => `${m.prenom} ${m.nom} : ${missingOf(m).join(', ')}`);
+  if (!state.renewCfg.taux) { toast('Cochez le taux de covoiturage.'); return; }
+  if (!state.renewCfg.faitA && !confirm('« Fait à » est vide. Continuer ?')) return;
+  if (members.length < 2 && !confirm('Un seul covoitureur dans l\'équipage. Continuer ?')) return;
+  if (incomplete.length && !confirm(`Informations manquantes :\n${incomplete.join('\n')}\n\nGénérer quand même ?`)) return;
+  const prog = $('#conv-progress');
+  prog.hidden = false;
+  prog.className = 'banner info';
+  $('#conv-result').hidden = true;
+  $('#btn-conv-generate').disabled = true;
+  try {
+    convBlob = await buildConvention({ template: state.convTemplate, members, taux: state.renewCfg.taux, faitA: state.renewCfg.faitA, onStep: (m) => { prog.textContent = m; } });
+    if (convUrl) URL.revokeObjectURL(convUrl);
+    convUrl = URL.createObjectURL(convBlob);
+    const y = conventionYear();
+    convName = `Convention_covoiturage_${y}_${members.map((m) => m.nom).join('_')}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9_-]+/g, '_') + '.pdf';
+    $('#btn-conv-download').href = convUrl;
+    $('#btn-conv-download').download = convName;
+    $('#btn-conv-open').href = convUrl;
+    $('#conv-ok').textContent = `✅ ${convName} — ${(convBlob.size / 1024 / 1024).toFixed(1).replace('.', ',')} Mo`;
+    // e-mail pré-rempli
+    const me = members[0];
+    const taux = (TAUX.find(([k]) => k === state.renewCfg.taux) || [, ''])[1].toLowerCase();
+    $('#c-to').value = state.settings.emailTo || DEFAULTS.emailTo;
+    $('#c-subject').value = `Convention commune covoiturage ${y} – équipage ${members.map((m) => `${m.prenom} ${m.nom}`).join(', ')}`;
+    $('#c-body').value = [
+      'Bonjour,', '',
+      `Veuillez trouver ci-joint la convention commune de covoiturage de notre équipage pour l'année ${y}, signée par ses membres, accompagnée des copies des permis de conduire, cartes grises et certificats d'assurance.`, '',
+      'Équipage :',
+      ...members.map((m, i) => `- Covoitureur ${i + 1} : ${m.prenom} ${m.nom}${m.badge ? ` (badge ${m.badge})` : ''} – ${m.commune || '?'}, ${zoneLabel(zoneForCommune(m.commune)).toLowerCase()}`),
+      '', `Taux de covoiturage déclaré : ${taux}.`,
+      '', 'Cordialement,', `${me.prenom} ${me.nom}`,
+    ].join('\n');
+    updateConvMail();
+    const canShare = !!(navigator.canShare && navigator.canShare({ files: [new File([convBlob], convName, { type: 'application/pdf' })] }));
+    $('#btn-conv-share').hidden = !canShare;
+    $('#conv-share-hint').hidden = !canShare;
+    prog.hidden = true;
+    $('#conv-result').hidden = false;
+    $('#conv-result').scrollIntoView({ behavior: 'smooth' });
+  } catch (err) {
+    console.error(err);
+    prog.className = 'banner error';
+    prog.textContent = `Erreur : ${err.message || err}`;
+  } finally {
+    $('#btn-conv-generate').disabled = false;
+  }
+});
+
+function updateConvMail() {
+  $('#btn-conv-mail').href = `mailto:${encodeURI($('#c-to').value.trim())}?subject=${encodeURIComponent($('#c-subject').value)}&body=${encodeURIComponent($('#c-body').value)}`;
+}
+['#c-to', '#c-subject', '#c-body'].forEach((sel) => $(sel).addEventListener('input', updateConvMail));
+$('#btn-conv-mail').addEventListener('click', () => saveRenewCfg({ sentAt: todayIso() }));
+$('#btn-conv-share').addEventListener('click', async () => {
+  if (!convBlob) return;
+  const to = $('#c-to').value.trim();
+  try { await navigator.clipboard.writeText(to); toast(`Adresse copiée : ${to}`); } catch (_) { /* ignoré */ }
+  try {
+    await navigator.share({ files: [new File([convBlob], convName, { type: 'application/pdf' })], title: $('#c-subject').value, text: $('#c-body').value });
+    saveRenewCfg({ sentAt: todayIso() });
+  } catch (err) {
+    if (err.name !== 'AbortError') toast('Partage impossible : utilisez « Ouvrir ma messagerie ».', 4000);
   }
 });
 

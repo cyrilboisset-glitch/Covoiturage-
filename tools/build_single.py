@@ -2,7 +2,7 @@
 """Construit une version « fichier unique » de l'appli : un seul .html qui
 contient tout (code, bibliothèques, justificatif vierge, lecture des tickets).
 
-Usage : python3 tools/build_single.py [sortie.html] [--justificatif chemin.pdf]
+Usage : python3 tools/build_single.py [sortie.html] [--justificatif chemin.pdf] [--convention chemin.pdf]
 
 --justificatif : embarque le justificatif vierge dans le fichier (à ne faire
 que pour une diffusion privée ; il n'est pas dans le dépôt).
@@ -17,9 +17,14 @@ if '--justificatif' in args:
     i = args.index('--justificatif')
     TEMPLATE = Path(args[i + 1]).resolve()
     del args[i:i + 2]
+CONVENTION = None
+if '--convention' in args:
+    i = args.index('--convention')
+    CONVENTION = Path(args[i + 1]).resolve()
+    del args[i:i + 2]
 OUT = Path(args[0]) if args else ROOT / 'dist' / 'covoiturage.html'
 
-MODULES = ['layout', 'format', 'store', 'imaging', 'segment', 'ocr', 'pdf', 'app']
+MODULES = ['layout', 'format', 'store', 'imaging', 'segment', 'zones', 'cartegrise', 'ocr', 'pdf', 'convention', 'app']
 
 def bundle():
     parts = []
@@ -61,6 +66,8 @@ blobs = {
 }
 if TEMPLATE:
     blobs['template'] = (TEMPLATE, 'application/pdf')
+if CONVENTION:
+    blobs['convention'] = (CONVENTION, 'application/pdf')
 data_tags = '\n'.join(
     f'<script type="application/octet-stream" id="inline-{k}" data-type="{t}">{b64(p)}</script>'
     for k, (p, t) in blobs.items())

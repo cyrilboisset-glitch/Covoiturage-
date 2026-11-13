@@ -39,6 +39,14 @@ async function getWorker(onProgress) {
 }
 let progressCb = null;
 
+// Texte brut d'une image (carte grise…)
+export async function recognizeText(image, onProgress) {
+  const worker = await getWorker(onProgress);
+  progressCb = onProgress;
+  const { data } = await worker.recognize(prepareForOcr(image));
+  return data.text || '';
+}
+
 export async function recognize(image, onProgress) {
   const worker = await getWorker(onProgress);
   progressCb = onProgress;

@@ -25,6 +25,10 @@
       </label>
       <button class="icon-btn" id="btn-settings" aria-label="Réglages">⚙️</button>
     </header>
+    <nav class="tabs">
+      <button type="button" class="tab active" data-tab="home">🧾 Justificatifs</button>
+      <button type="button" class="tab " data-tab="renew">📝 Renouvellement</button>
+    </nav>
 
     <div id="setup-warning" class="banner warn" hidden></div>
 
@@ -57,6 +61,115 @@
       <button class="btn primary big grow" id="btn-add-ticket">📷 Ajouter un ticket</button>
       <button class="btn dark big" id="btn-pdf">📄 PDF</button>
     </nav>
+  </section>
+
+  <!-- ================= RENOUVELLEMENT ================= -->
+  <section id="renew" class="screen" hidden>
+    <header class="topbar">
+      <h1>Renouvellement</h1>
+      <button class="icon-btn" data-open-settings aria-label="Réglages">⚙️</button>
+    </header>
+    <nav class="tabs">
+      <button type="button" class="tab " data-tab="home">🧾 Justificatifs</button>
+      <button type="button" class="tab active" data-tab="renew">📝 Renouvellement</button>
+    </nav>
+    <div class="banner info" id="renew-deadline"></div>
+
+    <h2 class="section-title">Ma fiche covoitureur</h2>
+    <div class="card" id="fiche-card"></div>
+    <button class="btn secondary block" id="btn-fiche">✏️ Remplir / modifier ma fiche</button>
+
+    <h2 class="section-title">Équipage <span class="muted">(5 covoitureurs max.)</span></h2>
+    <p class="hint">Chaque covoitureur remplit sa fiche dans son appli et l'envoie à un autre, qui l'importe. Celui qui a reçu toutes les fiches génère la convention et l'envoie.</p>
+    <ul id="crew-list" class="list"></ul>
+    <div class="row">
+      <button class="btn secondary" id="btn-crew-export">⬆️ Envoyer mon dossier</button>
+      <button class="btn secondary" id="btn-crew-import">⬇️ Importer un dossier</button>
+    </div>
+    <input type="file" id="crew-input" accept="application/json,.json" hidden>
+
+    <h2 class="section-title">Convention</h2>
+    <fieldset class="field">
+      <legend>Nous covoiturons ensemble, au moins :</legend>
+      <div class="choices one-col" id="r-taux"></div>
+    </fieldset>
+    <label class="field">Fait à
+      <input type="text" id="r-faita" maxlength="30" placeholder="Lieu de signature">
+    </label>
+    <p class="hint">La date « Le » est celle du jour de création du PDF.</p>
+    <div id="conv-progress" class="banner info" hidden></div>
+    <div id="conv-result" hidden>
+      <p class="ok-msg" id="conv-ok"></p>
+      <a class="btn secondary big block" id="btn-conv-download" download>⬇️ Enregistrer sur le téléphone</a>
+      <a class="btn secondary big block" id="btn-conv-open" target="_blank" rel="noopener">👁️ Ouvrir / vérifier</a>
+      <h2 class="section-title">Envoyer par e-mail</h2>
+      <label class="field">À <input type="email" id="c-to" inputmode="email" autocapitalize="off"></label>
+      <label class="field">Objet <input type="text" id="c-subject"></label>
+      <label class="field">Message <textarea id="c-body" rows="12"></textarea></label>
+      <button class="btn primary big block" id="btn-conv-share">📧 Envoyer avec le PDF joint</button>
+      <p class="hint" id="conv-share-hint">Choisissez votre messagerie : le PDF, l'objet et le message sont joints, l'adresse est copiée (collez-la dans « À »).</p>
+      <a class="btn secondary big block" id="btn-conv-mail">✉️ Ouvrir ma messagerie (PDF à joindre)</a>
+    </div>
+    <div class="bottom-spacer"></div>
+    <nav class="actionbar">
+      <button class="btn primary big grow" id="btn-conv-generate">📄 Générer la convention</button>
+    </nav>
+  </section>
+
+  <!-- ================= MA FICHE ================= -->
+  <section id="fiche" class="screen" hidden>
+    <header class="topbar">
+      <button class="icon-btn back" data-back aria-label="Retour">←</button>
+      <h1>Ma fiche covoitureur</h1>
+    </header>
+    <div class="banner info" id="f-from-settings"></div>
+    <button class="btn primary big block" id="btn-read-cg">📷 Lire ma carte grise</button>
+    <div id="f-ocr" class="banner info" hidden></div>
+    <label class="field">Adresse <span class="muted">(carte grise, rubrique C.3)</span>
+      <input type="text" id="f-adresse" autocomplete="street-address">
+    </label>
+    <label class="field">Commune
+      <input type="text" id="f-commune" autocomplete="address-level2">
+    </label>
+    <div class="zone-badge" id="f-zone"></div>
+    <label class="field">Numéro de badge
+      <input type="text" id="f-badge" inputmode="numeric">
+    </label>
+    <fieldset class="field">
+      <legend>Contrat</legend>
+      <div class="choices two-col" id="f-contrat">
+        <label class="choice"><input type="radio" name="contrat" value="CDI"><span>CDI</span></label>
+        <label class="choice"><input type="radio" name="contrat" value="CDD"><span>CDD</span></label>
+      </div>
+    </fieldset>
+    <label class="field">Km domicile-travail (aller)
+      <input type="text" id="f-km" inputmode="decimal">
+    </label>
+    <h2 class="section-title">Véhicule</h2>
+    <label class="field">Marque <span class="muted">(D.1)</span><input type="text" id="f-marque" autocapitalize="characters"></label>
+    <label class="field">Type / modèle <span class="muted">(D.3)</span><input type="text" id="f-type" autocapitalize="characters"></label>
+    <label class="field">Puissance administrative (CV) <span class="muted">(P.6)</span><input type="text" id="f-puissance" inputmode="numeric"></label>
+    <label class="field">Immatriculation <span class="muted">(A)</span><input type="text" id="f-immat" autocapitalize="characters"></label>
+    <h2 class="section-title">Pièces jointes</h2>
+    <div id="f-pieces"></div>
+    <label class="check">
+      <input type="checkbox" id="f-checked">
+      <span>J'ai vérifié ces informations.</span>
+    </label>
+    <div class="bottom-spacer"></div>
+    <nav class="actionbar">
+      <button class="btn primary big grow" id="btn-fiche-save" disabled>Enregistrer ma fiche</button>
+    </nav>
+  </section>
+
+  <!-- ================= COVOITUREUR IMPORTÉ ================= -->
+  <section id="member" class="screen" hidden>
+    <header class="topbar">
+      <button class="icon-btn back" data-back aria-label="Retour">←</button>
+      <h1 id="member-title">Covoitureur</h1>
+    </header>
+    <div class="card" id="member-card"></div>
+    <button class="btn link danger block" id="btn-member-remove">Retirer de l'équipage</button>
   </section>
 
   <!-- ================= RÉGLAGES ================= -->
@@ -103,6 +216,12 @@
         <button type="button" class="btn secondary block" id="btn-tpl-import">📄 Importer le justificatif vierge</button>
         <input type="file" id="tpl-input" accept="application/pdf,.pdf" hidden>
         <p class="hint">Le formulaire « Justificatifs de frais pour remboursement dans le cadre d'un accord de covoiturage » fourni par l'entreprise. Il est importé une seule fois et reste sur ce téléphone.</p>
+      </fieldset>
+      <fieldset class="field">
+        <legend>Convention commune covoiturage (PDF)</legend>
+        <div class="banner" id="conv-tpl-status"></div>
+        <button type="button" class="btn secondary block" id="btn-conv-tpl-import">📄 Importer la convention vierge</button>
+        <input type="file" id="conv-tpl-input" accept="application/pdf,.pdf" hidden>
       </fieldset>
       <div class="bottom-spacer"></div>
       <nav class="actionbar">

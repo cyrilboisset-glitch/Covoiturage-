@@ -22,6 +22,22 @@ tickets (OCR) se fait sur le téléphone.
 5. En fin d'année : **PDF** → **Générer le PDF** → Partager / Enregistrer.
 6. Penser à **Exporter** régulièrement une sauvegarde (fichier `.json`).
 
+## Renouvellement (convention commune covoiturage)
+
+Onglet « Renouvellement » :
+1. Chacun remplit **sa fiche** : « Lire ma carte grise » remplit adresse, commune, marque, modèle,
+   puissance et immatriculation (à vérifier) ; la **zone** est déduite de la commune. Badge,
+   contrat et km sont saisis une fois. Nom, prénom, horaire et signature viennent des Réglages.
+   Pièces jointes : permis, carte grise, assurance.
+2. **Envoyer mon dossier** produit un fichier `.json` (sa fiche + celles déjà importées) à envoyer
+   au covoitureur suivant, qui fait **Importer un dossier** : les fiches sont fusionnées.
+3. Celui qui a toutes les fiches (5 max.) coche le taux de covoiturage, indique « Fait à » et
+   **génère la convention** : formulaire rempli et signé + pièces jointes, puis e-mail pré-rempli
+   à crolles.transport@st.com.
+
+La convention vierge n'est pas dans le dépôt : elle s'importe dans les Réglages
+(ou s'embarque dans le fichier unique avec `--convention chemin.pdf`).
+
 ## Contenu du PDF
 
 1. Justificatif rempli (16 lignes par feuille ; au-delà, feuilles supplémentaires avec
@@ -53,6 +69,9 @@ jour automatique ; les données sont liées au navigateur qui a ouvert le fichie
 - `js/layout.js` – emplacements des champs sur le justificatif
 - `js/pdf.js` – génération du PDF (pdf-lib)
 - `js/ocr.js` – lecture des tickets (Tesseract.js, français)
+- `js/zones.js` – zones de covoiturage par commune
+- `js/cartegrise.js` – lecture de la carte grise
+- `js/convention.js` – remplissage de la convention
 - `js/segment.js` – détection de plusieurs tickets sur une photo
 - `js/imaging.js` – recadrage, compression, extraction de la signature
 - `js/store.js` – stockage local
