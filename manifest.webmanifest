@@ -1,0 +1,17 @@
+{
+  "name": "Covoiturage PDE – justificatifs",
+  "short_name": "Covoiturage",
+  "description": "Photographiez vos tickets de carburant et générez le dossier PDF de covoiturage. Données stockées uniquement sur le téléphone.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3f5f4",
+  "theme_color": "#156548",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

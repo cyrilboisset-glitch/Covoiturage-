@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Covoiturage PDE</title>
+  <meta name="description" content="Justificatifs de carburant pour le dossier de covoiturage. Données stockées uniquement sur le téléphone.">
+  <meta name="theme-color" content="#156548">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Covoiturage">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- ================= ACCUEIL ================= -->
+  <section id="home" class="screen">
+    <header class="topbar">
+      <h1>Covoiturage</h1>
+      <label class="year">Année
+        <select id="year-select" aria-label="Année du dossier"></select>
+      </label>
+      <button class="icon-btn" id="btn-settings" aria-label="Réglages">⚙️</button>
+    </header>
+
+    <div id="setup-warning" class="banner warn" hidden></div>
+
+    <div class="total-card">
+      <div class="total-label">Total des tickets validés</div>
+      <div class="total-value" id="total-value">0,00 €</div>
+      <div class="total-sub" id="total-sub">Aucun ticket</div>
+    </div>
+
+    <h2 class="section-title">Tickets <span class="muted">(par date)</span></h2>
+    <ul id="ticket-list" class="list"></ul>
+    <p id="ticket-empty" class="empty">Aucun ticket pour cette année.<br>Appuyez sur « Ajouter un ticket » au moment du plein.</p>
+
+    <h2 class="section-title">Autres documents <span class="muted">(carte grise…)</span></h2>
+    <ul id="doc-list" class="list"></ul>
+    <button class="btn secondary block" id="btn-add-doc">＋ Autre document</button>
+
+    <h2 class="section-title">Sauvegarde</h2>
+    <p class="hint">Vos données ne sont que sur ce téléphone. Exportez-les régulièrement (changement de téléphone, navigateur vidé).</p>
+    <div class="row">
+      <button class="btn secondary" id="btn-export">⬇️ Exporter</button>
+      <button class="btn secondary" id="btn-import">⬆️ Restaurer</button>
+    </div>
+    <input type="file" id="import-input" accept="application/json,.json" hidden>
+    <div class="bottom-spacer"></div>
+
+    <nav class="actionbar">
+      <button class="btn primary big grow" id="btn-add-ticket">📷 Ajouter un ticket</button>
+      <button class="btn dark big" id="btn-pdf">📄 PDF</button>
+    </nav>
+  </section>
+
+  <!-- ================= RÉGLAGES ================= -->
+  <section id="settings" class="screen" hidden>
+    <header class="topbar">
+      <button class="icon-btn back" data-back aria-label="Retour">←</button>
+      <h1>Réglages</h1>
+    </header>
+    <p class="hint" id="first-run-hint" hidden>Bienvenue ! Renseignez ces informations une seule fois : elles seront inscrites automatiquement sur le justificatif. Elles restent sur ce téléphone.</p>
+    <form id="settings-form" autocomplete="on">
+      <label class="field">Nom
+        <input type="text" id="s-nom" autocomplete="family-name" autocapitalize="characters" required>
+      </label>
+      <label class="field">Prénom
+        <input type="text" id="s-prenom" autocomplete="given-name" autocapitalize="words" required>
+      </label>
+      <label class="field">N° d'équipage <span class="muted">(facultatif, 6 caractères max.)</span>
+        <input type="text" id="s-equipage" maxlength="6" inputmode="text" autocapitalize="characters">
+      </label>
+      <fieldset class="field">
+        <legend>Équipe</legend>
+        <div class="choices" id="s-equipe"></div>
+      </fieldset>
+
+      <fieldset class="field">
+        <legend>Signature</legend>
+        <div class="sig-preview checker" id="sig-preview"><span class="muted">Aucune signature</span></div>
+        <div class="row">
+          <button type="button" class="btn secondary" id="btn-sig-photo">📷 Photo</button>
+          <button type="button" class="btn secondary" id="btn-sig-draw">✍️ Au doigt</button>
+        </div>
+        <button type="button" class="btn link danger" id="btn-sig-delete" hidden>Supprimer la signature</button>
+        <p class="hint">Photo : signez au feutre noir sur une feuille blanche, cadrez la signature. Le fond blanc est retiré automatiquement.</p>
+      </fieldset>
+      <div class="bottom-spacer"></div>
+      <nav class="actionbar">
+        <button type="submit" class="btn primary big grow">Enregistrer</button>
+      </nav>
+    </form>
+  </section>
+
+  <!-- ================= SIGNATURE AU DOIGT ================= -->
+  <section id="sigpad" class="screen" hidden>
+    <header class="topbar">
+      <button class="icon-btn back" data-back aria-label="Retour">←</button>
+      <h1>Signer au doigt</h1>
+    </header>
+    <p class="hint">Signez dans le cadre. Astuce : tournez le téléphone à l'horizontale pour plus de place.</p>
+    <canvas id="sig-canvas" class="sig-canvas"></canvas>
+    <div class="bottom-spacer"></div>
+    <nav class="actionbar">
+      <button class="btn secondary big" id="btn-sig-clear">Effacer</button>
+      <button class="btn primary big grow" id="btn-sig-ok">Utiliser</button>
+    </nav>
+  </section>
+
+  <!-- ================= APERÇU SIGNATURE ================= -->
+  <section id="sigcheck" class="screen" hidden>
+    <header class="topbar">
+      <button class="icon-btn back" data-back aria-label="Retour">←</button>
+      <h1>Aperçu de la signature</h1>
+    </header>
+    <p class="hint">Voici la signature telle qu'elle apparaîtra (fond transparent).</p>
+    <div class="sig-preview checker large" id="sigcheck-preview"></div>
+    <div class="bottom-spacer"></div>
+    <nav class="actionbar">
+      <button class="btn secondary big" id="btn-sigcheck-redo">Refaire</button>
+      <button class="btn primary big grow" id="btn-sigcheck-ok">Garder</button>
+    </nav>
+  </section>
+
+  <!-- ================= RECADRAGE ================= -->
+  <section id="editor" class="screen dark-screen" hidden>
+    <header class="topbar">
+      <button class="icon-btn back" data-back aria-label="Retour">←</button>
+      <h1 id="editor-title">Recadrer</h1>
+    </header>
+    <div class="editor-stage" id="editor-stage">
+      <canvas id="editor-canvas"></canvas>
+      <div class="crop-box" id="crop-box">
+        <span class="h tl"></span><span class="h tr"></span><span class="h bl"></span><span class="h br"></span>
+      </div>
+    </div>
+    <p class="hint center light">Faites glisser les coins pour ne garder que le document.</p>
+    <nav class="actionbar">
+      <button class="btn secondary big" id="btn-rotate">↻ Pivoter</button>
+      <button class="btn secondary big" id="btn-crop-reset">Tout</button>
+      <button class="btn primary big grow" id="btn-crop-ok">OK</button>
+    </nav>
+  </section>
+
+  <!-- ================= TICKET ================= -->
+  <section id="ticket" class="screen" hidden>
+    <header class="topbar">
+      <button class="icon-btn back" data-back aria-label="Retour">←</button>
+      <h1 id="ticket-title">Vérifier le ticket</h1>
+    </header>
+    <div class="ticket-layout">
+      <div class="ticket-photo">
+        <img id="ticket-img" alt="Photo du ticket">
+        <button class="btn link" id="btn-ticket-zoom">🔍 Agrandir</button>
+      </div>
+      <div class="ticket-fields">
+        <div id="ocr-status" class="banner info" hidden></div>
+        <div id="other-items" class="banner warn" hidden></div>
+        <label class="field">Date du ticket
+          <input type="date" id="t-date" required>
+        </label>
+        <label class="field">Carburant
+          <select id="t-fuel" required></select>
+        </label>
+        <label class="field" id="t-fuel-other-wrap" hidden>Autre carburant
+          <input type="text" id="t-fuel-other" maxlength="30">
+        </label>
+        <label class="field">Montant payé pour le carburant (€)
+          <input type="text" id="t-amount" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
+        </label>
+        <div id="amount-candidates" class="candidates" hidden></div>
+        <div id="dup-warning" class="banner warn" hidden></div>
+      </div>
+    </div>
+    <label class="check">
+      <input type="checkbox" id="t-checked">
+      <span>J'ai vérifié la date, le carburant et le montant sur le ticket.</span>
+    </label>
+    <button class="btn link danger" id="btn-ticket-delete" hidden>Supprimer ce ticket</button>
+    <div class="bottom-spacer"></div>
+    <nav class="actionbar">
+      <button class="btn secondary big" id="btn-ticket-retake">Reprendre</button>
+      <button class="btn primary big grow" id="btn-ticket-save" disabled>Valider</button>
+    </nav>
+  </section>
+
+  <!-- ================= DOCUMENT ================= -->
+  <section id="doc" class="screen" hidden>
+    <header class="topbar">
+      <button class="icon-btn back" data-back aria-label="Retour">←</button>
+      <h1>Autre document</h1>
+    </header>
+    <img id="doc-img" class="doc-img" alt="Aperçu du document">
+    <label class="field">Nom du document
+      <input type="text" id="d-name" maxlength="60" placeholder="ex. Carte grise" required>
+    </label>
+    <button class="btn link danger" id="btn-doc-delete" hidden>Supprimer ce document</button>
+    <div class="bottom-spacer"></div>
+    <nav class="actionbar">
+      <button class="btn secondary big" id="btn-doc-replace">Remplacer la photo</button>
+      <button class="btn primary big grow" id="btn-doc-save">Enregistrer</button>
+    </nav>
+  </section>
+
+  <!-- ================= PDF ================= -->
+  <section id="pdf" class="screen" hidden>
+    <header class="topbar">
+      <button class="icon-btn back" data-back aria-label="Retour">←</button>
+      <h1>Dossier PDF</h1>
+    </header>
+    <div id="pdf-summary" class="pdf-summary"></div>
+    <div id="pdf-progress" class="banner info" hidden></div>
+    <div id="pdf-result" hidden>
+      <p class="ok-msg" id="pdf-ok"></p>
+      <button class="btn primary big block" id="btn-pdf-share">📤 Partager / envoyer</button>
+      <a class="btn secondary big block" id="btn-pdf-download" download>⬇️ Enregistrer sur le téléphone</a>
+      <a class="btn secondary big block" id="btn-pdf-open" target="_blank" rel="noopener">👁️ Ouvrir / vérifier</a>
+    </div>
+    <div class="bottom-spacer"></div>
+    <nav class="actionbar">
+      <button class="btn primary big grow" id="btn-pdf-generate">Générer le PDF</button>
+    </nav>
+  </section>
+
+  <!-- Visionneuse plein écran -->
+  <div id="viewer" class="viewer" hidden>
+    <img id="viewer-img" alt="">
+    <button class="btn dark" id="viewer-close">Fermer</button>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <input type="file" id="cam-input" accept="image/*" capture="environment" hidden>
+  <input type="file" id="gal-input" accept="image/*" hidden>
+
+  <!-- Choix de la source de l'image -->
+  <div id="picker" class="sheet-backdrop" hidden>
+    <div class="sheet">
+      <p class="sheet-title" id="picker-title">Ajouter une image</p>
+      <button class="btn primary big block" id="pick-camera">📷 Appareil photo</button>
+      <button class="btn secondary big block" id="pick-gallery">🖼️ Galerie / fichiers</button>
+      <button class="btn link block" id="pick-cancel">Annuler</button>
+    </div>
+  </div>
+
+  <script src="vendor/pdf-lib.min.js"></script>
+  <script src="vendor/tesseract/tesseract.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
