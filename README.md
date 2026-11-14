@@ -65,7 +65,7 @@ jour automatique ; les données sont liées au navigateur qui a ouvert le fichie
 ## Application Android (APK)
 
 À chaque modification poussée sur GitHub, le workflow `.github/workflows/apk.yml` construit
-l'appli en fichier unique (sans les formulaires), l'empaquette dans une WebView Android
+l'appli en fichier unique (avec les formulaires vierges de `formulaires/`), l'empaquette dans une WebView Android
 (`android/`) et dépose `apk/Covoiturage.apk` dans le dépôt.
 
 L'appli Android ajoute : appareil photo, choix de fichiers, enregistrement des PDF dans
@@ -91,5 +91,5 @@ test qui change à chaque compilation (il faut alors désinstaller avant de réi
 - `js/imaging.js` – recadrage, compression, extraction de la signature
 - `js/store.js` – stockage local
 - `tools/build_single.py` – construction de la version fichier unique
-- Le justificatif vierge n'est pas dans le dépôt : chaque utilisateur l'importe dans Réglages.
+- `formulaires/` – justificatif et convention vierges, inclus dans l'APK (un PDF importé dans Réglages les remplace)
 - `vendor/` – bibliothèques embarquées (pdf-lib, Tesseract.js), licences incluses

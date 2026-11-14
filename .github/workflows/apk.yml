@@ -10,6 +10,7 @@ on:
       - 'icons/**'
       - 'tools/build_single.py'
       - 'android/**'
+      - 'formulaires/**'
       - '.github/workflows/apk.yml'
   workflow_dispatch:
 
@@ -31,10 +32,16 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      # L'appli est empaquetée en « fichier unique », SANS les formulaires
-      # (justificatif et convention « ST Restricted ») : chacun les importe dans Réglages.
+      # L'appli est empaquetée en « fichier unique ». Les formulaires vierges
+      # (formulaires/justificatif.pdf et formulaires/convention.pdf) sont inclus
+      # s'ils sont présents dans le dépôt ; sinon chacun les importe dans Réglages.
       - name: Construire l'appli (fichier unique)
-        run: python3 tools/build_single.py android/app/src/main/assets/index.html
+        run: |
+          OPTS=""
+          if [ -f formulaires/justificatif.pdf ]; then OPTS="$OPTS --justificatif formulaires/justificatif.pdf"; fi
+          if [ -f formulaires/convention.pdf ]; then OPTS="$OPTS --convention formulaires/convention.pdf"; fi
+          echo "Formulaires inclus :$OPTS"
+          python3 tools/build_single.py android/app/src/main/assets/index.html $OPTS
 
       - name: Clé de signature (si fournie dans les secrets du dépôt)
         env:
