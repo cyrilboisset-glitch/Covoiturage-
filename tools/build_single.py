@@ -101,6 +101,7 @@ icon = 'data:image/png;base64,' + b64('icons/apple-touch-icon.png')
 html = html.replace('<link rel="manifest" href="manifest.webmanifest">\n', '')
 html = html.replace('<link rel="icon" href="icons/icon-192.png">', f'<link rel="icon" href="{icon}">')
 html = html.replace('<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">', f'<link rel="apple-touch-icon" href="{icon}">')
+html = html.replace('<link rel="stylesheet" href="vendor/fonts.css">', f'<style>\n{(ROOT / "vendor/fonts.css").read_text(encoding="utf-8")}\n</style>')
 html = html.replace('<link rel="stylesheet" href="styles.css">', f'<style>\n{css}\n</style>')
 html = html.replace('<script src="vendor/pdf-lib.min.js"></script>',
                     f'<script>{check((ROOT / "vendor/pdf-lib.min.js").read_text(encoding="utf-8"), "pdf-lib")}</script>')

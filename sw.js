@@ -1,11 +1,12 @@
 // Service worker : met toute l'appli en cache pour un fonctionnement hors ligne.
 // Pensez à incrémenter VERSION à chaque modification des fichiers.
-const VERSION = 'v7';
+const VERSION = 'v8';
 const CACHE = `covoiturage-${VERSION}`;
 const FILES = [
   './',
   'index.html',
   'styles.css',
+  'vendor/fonts.css',
   'manifest.webmanifest',
   'js/app.js',
   'js/store.js',

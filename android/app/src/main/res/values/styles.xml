@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="vert">#156548</color>
-    <color name="fond">#F3F5F4</color>
-    <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:colorPrimary">@color/vert</item>
-        <item name="android:colorAccent">@color/vert</item>
-        <item name="android:statusBarColor">@color/vert</item>
+    <!-- Charte GOATout : noir chaud, or, cuivre -->
+    <color name="fond">#0F0E0D</color>
+    <color name="or">#F0CF73</color>
+    <color name="tuile">#1A1816</color>
+    <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:colorPrimary">@color/or</item>
+        <item name="android:colorAccent">@color/or</item>
+        <item name="android:statusBarColor">@color/fond</item>
         <item name="android:navigationBarColor">@color/fond</item>
-        <item name="android:windowLightNavigationBar">true</item>
         <item name="android:windowBackground">@color/fond</item>
     </style>
 </resources>
